@@ -1,0 +1,270 @@
+---
+title: "Account Management"
+description: "Understand the Hyperswitch account hierarchy, create and manage merchant accounts and profiles, configure your team, set up surcharges, and manage multi-tenant deployments."
+---
+
+Hyperswitch uses a three-level hierarchy — **Organization → Merchant Account → Profile** — to give you precise control over how payments are structured, routed, and reported across your business.
+
+<CardGroup cols={2}>
+  <Card title="Account hierarchy" icon="sitemap">
+    Organize businesses, sub-merchants, and business units under a single organization.
+  </Card>
+  <Card title="Team management" icon="users">
+    Invite team members and assign roles with granular permissions at each level.
+  </Card>
+  <Card title="Multi-tenancy" icon="cubes-stacked">
+    Serve multiple tenants from a single Hyperswitch instance with full data isolation.
+  </Card>
+  <Card title="Surcharge configuration" icon="receipt">
+    Apply dynamic surcharges to payments based on amount, currency, or payment method.
+  </Card>
+</CardGroup>
+
+## Account hierarchy
+
+Every Hyperswitch account follows the same three-level structure:
+
+```
+Organization
+└── Merchant Account (has API key + publishable key)
+    └── Profile (has profile_id, routing rules, webhook URL)
+        └── Processors (Stripe, Adyen, Braintree, …)
+```
+
+### Organization
+
+An organization represents your top-level business entity. When you sign up, one organization is created and you are assigned the **Organization Admin** role. All merchant accounts and profiles live beneath it.
+
+### Merchant account
+
+Each merchant account is associated with its own `api_key` and `publishable_key`. Use separate merchant accounts when:
+
+- Different business lines need separate API credentials.
+- You are a marketplace operator and want to issue isolated API keys to sub-merchants.
+
+### Profile
+
+A profile (also called a business profile) is the most granular level in the hierarchy. Every payment processed through Hyperswitch is tagged to exactly one profile. Profiles let you configure:
+
+- **Routing algorithm** — rule-based, volume-based, or default priority fallback.
+- **Webhook URL** and **return URL** for payments.
+- **Processors** — only processors connected to a profile can route payments for that profile.
+
+<Note>
+  If a merchant account has more than one profile, you must pass `profile_id` in every payment create request. With a single profile, `profile_id` is optional.
+</Note>
+
+## Creating merchant accounts and profiles
+
+When you sign up on the Hyperswitch Control Center, one merchant account and one default profile are automatically created for you.
+
+### Add a merchant account
+
+<Steps>
+  <Step title="Open the merchant dropdown">
+    In the Control Center, click the merchant account dropdown in the top-left corner.
+  </Step>
+  <Step title="Create a new merchant">
+    Click **Create new merchant**, enter a name, and confirm. A new merchant account is created with its own API key pair.
+  </Step>
+  <Step title="Retrieve API keys">
+    Navigate to **Developers → Keys** under the new merchant account. Create an API key and copy it immediately — it is shown only once.
+  </Step>
+</Steps>
+
+### Add a profile
+
+<Steps>
+  <Step title="Open the profile dropdown">
+    Click the profile dropdown in the top-right corner of the Control Center.
+  </Step>
+  <Step title="Create a new profile">
+    Click **Create new profile**, enter a profile name, and click **Add**. A `profile_id` is automatically generated.
+  </Step>
+  <Step title="Configure the profile">
+    Navigate to **Settings → Business Profiles** to find the `profile_id` and configure routing, webhooks, and return URLs for the profile.
+  </Step>
+</Steps>
+
+### Route a payment to a specific merchant and profile
+
+To target a specific merchant account, use that merchant's API key in the `Authorization` header of your payment create request. To target a specific profile within that merchant, pass `profile_id` in the request body.
+
+```bash payment create
+curl --request POST \
+  --url https://sandbox.hyperswitch.io/payments \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: YOUR_MERCHANT_API_KEY' \
+  --data '{
+    "amount": 6540,
+    "currency": "USD",
+    "profile_id": "pro_AbCdEfGhIjKl",
+    "customer_id": "cus_123",
+    "description": "Order #1234"
+  }'
+```
+
+All refunds and mandates created for a payment inherit the same profile as the original payment.
+
+## Use cases for account structure
+
+<AccordionGroup>
+  <Accordion title="Multiple merchant accounts — separate API keys per business">
+    If you run multiple distinct businesses (for example, A_Shoes, A_Clothing, and A_Bags), create a separate merchant account for each. Each account has independent API credentials, isolated payment data, and its own processor configuration.
+
+    This is also the right structure for marketplace operators who need to issue each sub-merchant their own API key.
+  </Accordion>
+  <Accordion title="Multiple profiles — one API key for all businesses">
+    If you prefer a single API key across all business lines, create one merchant account and add a profile for each business unit (for example, Clothing, Shoes, Bags). All payments pass through the same API key, distinguished only by `profile_id`.
+
+    This is useful for marketplaces that manage sub-merchant routing centrally without distributing API credentials.
+  </Accordion>
+  <Accordion title="Centralized payment acceptance on behalf of sub-merchants">
+    Hyperswitch lets an organization accept payments on behalf of a sub-merchant using one of the sub-merchant's profiles, without the organization gaining access to the sub-merchant's connector credentials.
+  </Accordion>
+</AccordionGroup>
+
+## Team management
+
+Navigate to **Settings → Team** in the Control Center to manage your users.
+
+### Inviting a team member
+
+<Steps>
+  <Step title="Go to team settings">
+    In the Control Center, navigate to **Settings → Team**.
+  </Step>
+  <Step title="Invite a user">
+    Click **Invite user**, enter their email address, and select a role. If email notifications are enabled, an invitation email is sent. Otherwise, a temporary password is generated that you can share directly.
+  </Step>
+  <Step title="Adjust roles as needed">
+    Roles can be updated later from the same **Team** screen.
+  </Step>
+</Steps>
+
+### Default roles
+
+Hyperswitch provides the following built-in roles. Roles are scoped to the organization, merchant account, or profile level as appropriate.
+
+| Role | Scope | Key permissions |
+|------|-------|-----------------|
+| Organization Admin | Organization | Full access including creating new merchant accounts |
+| Merchant Admin | Merchant | Full merchant access; cannot create new merchants |
+| Profile Admin | Profile | Full control over a single profile |
+| Merchant Developer | Merchant | Create/manage API keys; view operations and analytics |
+| Profile Developer | Profile | Create/manage API keys for the profile |
+| Merchant Operator | Merchant | Manage refunds, mandates, disputes; view-only for config |
+| Profile Operator | Profile | Manage payment operations for the profile |
+| Merchant IAM | Merchant | Invite/manage users; restricted access to other modules |
+| Profile IAM | Profile | Invite/manage users within the profile |
+| Merchant View Only | Merchant | Read-only access to all modules |
+| Profile View Only | Profile | Read-only access to all profile modules |
+| Customer Support | Merchant | View transactions and customer data for support queries |
+| Profile Customer Support | Profile | View transactions within the profile for support |
+
+### Custom roles
+
+If the default roles do not match your operational structure, you can create custom roles with specific permission sets.
+
+<Steps>
+  <Step title="Navigate to roles">
+    Go to **Settings → Users**, then switch to the **Roles** tab.
+  </Step>
+  <Step title="Create a custom role">
+    Click **Create Custom Roles**, define the scope (merchant-level), and select the permissions to grant.
+  </Step>
+</Steps>
+
+<Note>
+  Custom roles can only be created at the merchant level.
+</Note>
+
+## Surcharge configuration
+
+Surcharges let you pass payment processing fees on to your customers, either as a flat amount or a percentage of the transaction.
+
+### How it works
+
+When a payment request matches your surcharge rule, Hyperswitch adds the surcharge to the authorization amount sent to the processor. For example, a 5% surcharge rule on a $1,000 payment results in $1,050 being authorized.
+
+### Option 1: Pass surcharge details per payment
+
+Include `surcharge_details` in your payment create request:
+
+```json payment create request
+{
+  "amount": 10000,
+  "currency": "USD",
+  "surcharge_details": {
+    "surcharge": {
+      "percentage": 5.0
+    }
+  }
+}
+```
+
+### Option 2: Configure rules in the Control Center
+
+Use the **Surcharge Decision Manager** to define rules based on payment parameters such as `payment_amount`, `payment_method`, and `card_network`. When a payment matches a rule, the surcharge is applied automatically without any changes to your integration.
+
+<Steps>
+  <Step title="Open the Surcharge Manager">
+    In the Control Center, navigate to **Workflow → Surcharge**.
+  </Step>
+  <Step title="Create a rule">
+    Define conditions (for example, payment amount greater than $100) and set the surcharge value (fixed or percentage).
+  </Step>
+  <Step title="Activate the rule">
+    Toggle the rule to active. New payments that match the conditions will have the surcharge applied automatically.
+  </Step>
+</Steps>
+
+## Multi-tenancy
+
+If you are a platform or SaaS provider deploying Hyperswitch for multiple clients, multi-tenancy lets you serve all of them from a single Hyperswitch instance while keeping each tenant's data completely isolated.
+
+### How isolation works
+
+Hyperswitch uses a single application with multiple storage schemas. Each tenant operates in a logically separate environment — their data, configurations, and customizations are never accessible to other tenants even though they share the underlying infrastructure.
+
+The entity hierarchy for a multi-tenant deployment is:
+
+```
+Tenant
+└── Organization (multiple)
+    └── Merchant Account
+        └── Profile
+```
+
+Tenant admins can create organizations within their tenant scope. Each level below inherits the boundaries set above it.
+
+### What tenants can customize
+
+<CardGroup cols={2}>
+  <Card title="Branding" icon="palette">
+    Logo, colors, themes, and email templates tailored to each tenant's identity.
+  </Card>
+  <Card title="Feature toggles" icon="toggle-on">
+    Enable or disable specific Hyperswitch features per tenant.
+  </Card>
+  <Card title="Language preferences" icon="language">
+    Set locale and language defaults for each tenant's merchants.
+  </Card>
+  <Card title="Custom plugins" icon="plug">
+    Tenants can extend Hyperswitch functionality through standardized APIs and SDKs.
+  </Card>
+</CardGroup>
+
+### Onboarding a tenant
+
+Each tenant receives white-labeled endpoints for:
+
+- **Server-to-server APIs** — for payment processing calls.
+- **Payment Page** — the hosted checkout experience.
+- **Control Center Dashboard** — the management interface.
+
+After white-labeled endpoints are provisioned, login credentials are sent to the tenant admin via email. The tenant admin can then onboard their own merchants through the dashboard.
+
+<Tip>
+  Hyperswitch can integrate with your SMS or email service provider to send payment notifications to customers and merchants on behalf of each tenant.
+</Tip>

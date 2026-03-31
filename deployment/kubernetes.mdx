@@ -1,0 +1,387 @@
+---
+title: "Deploy on Kubernetes"
+description: "Deploy Hyperswitch on any Kubernetes cluster using the official Helm chart. Includes guides for GCP, Azure, and local Minikube."
+---
+
+The Hyperswitch Helm chart installs the App Server, Control Center, Web SDK, Card Vault, and the full monitoring stack (Prometheus, Loki, Grafana) into a Kubernetes cluster. This is the recommended approach for enterprise-grade production deployments.
+
+## Prerequisites
+
+You need the following tools installed before you start:
+
+| Tool | Minimum version |
+|---|---|
+| Kubernetes | v1.22+ |
+| Helm | v3+ |
+| kubectl | v1.28+ |
+
+Your cluster nodes must meet the minimum hardware baseline for the expected load. The recommended minimum for **40 RPS (~10 TPS)** is:
+
+- 2 nodes with 4 vCPU and 16 GB RAM each
+- PostgreSQL 14.x (managed or self-hosted)
+- Redis 7.x (managed or self-hosted)
+
+<Note>
+  For production deployments, provision 30–50% additional headroom above your expected peak traffic. Use the [Scale and Reliability](/deployment/overview#architecture-overview) sizing tables to plan capacity.
+</Note>
+
+---
+
+## Add the Hyperswitch Helm repository
+
+Run these two commands once to add and update the chart repository:
+
+```bash
+helm repo add hyperswitch https://juspay.github.io/hyperswitch-helm
+helm repo update
+```
+
+---
+
+## Deploy on your cloud provider
+
+<Tabs>
+  <Tab title="GCP (GKE)">
+
+### Set up a GKE cluster
+
+<Steps>
+  <Step title="Enable the Kubernetes Engine API">
+    In the [Google Cloud Console](https://console.cloud.google.com), navigate to **APIs & Services → Library**, search for **Kubernetes Engine API**, and click **Enable**. You need an active billing account to proceed.
+  </Step>
+
+  <Step title="Install required tools">
+    Install the following tools if you have not already:
+
+    - [Google Cloud CLI (`gcloud`)](https://cloud.google.com/sdk/docs/install)
+    - [kubectl](https://kubernetes.io/docs/tasks/tools/)
+    - [Helm](https://helm.sh/docs/intro/install/)
+
+    <Warning>
+      Make sure only one version of `kubectl` is installed to avoid environment conflicts.
+    </Warning>
+  </Step>
+
+  <Step title="Create the cluster">
+    ```bash
+    gcloud container clusters create hypers-cluster \
+        --zone us-central1-a \
+        --num-nodes 2 \
+        --machine-type e2-standard-4
+    ```
+
+    Replace `us-central1-a` with a zone close to your users. The `e2-standard-4` machine type provides 4 vCPU and 16 GB RAM per node.
+  </Step>
+
+  <Step title="Fetch cluster credentials">
+    ```bash
+    gcloud container clusters get-credentials hypers-cluster --zone us-central1-a
+    ```
+
+    Verify the nodes are ready:
+
+    ```bash
+    kubectl get nodes
+    ```
+  </Step>
+</Steps>
+
+### Deploy Hyperswitch
+
+<Steps>
+  <Step title="Label the nodes">
+    Hyperswitch requires nodes with at least 4 CPUs and 6 GB of memory. Label your nodes so the scheduler can place pods correctly:
+
+    ```bash
+    kubectl label nodes <your-node-name> node-type=generic-compute
+    ```
+
+    List nodes to confirm the label was applied:
+
+    ```bash
+    kubectl get nodes --show-labels
+    ```
+  </Step>
+
+  <Step title="Create a namespace">
+    ```bash
+    kubectl create namespace hyperswitch
+    ```
+  </Step>
+
+  <Step title="Install the Helm chart">
+    ```bash
+    helm install hypers-v1 hyperswitch/hyperswitch-stack -n hyperswitch
+    ```
+
+    Monitor pod startup:
+
+    ```bash
+    kubectl get pods -n hyperswitch --watch
+    ```
+
+    Wait until all pods show `Running` status before proceeding.
+  </Step>
+
+  <Step title="Access the services">
+    Use port-forwarding to access services locally:
+
+    ```bash
+    kubectl port-forward service/hyperswitch-server 8080:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hyperswitch-control-center 9000:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hyperswitch-web 9050:9050 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hypers-v1-grafana 3000:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/mailhog 8025:8025 -n hyperswitch > /dev/null 2>&1 &
+    ```
+
+    Services are then available at:
+
+    | Service | URL |
+    |---|---|
+    | App Server | `http://localhost:8080` |
+    | Control Center | `http://localhost:9000` |
+    | Web SDK | `http://localhost:9050/HyperLoader.js` |
+    | Grafana | `http://localhost:3000` |
+    | MailHog | `http://localhost:8025` |
+  </Step>
+</Steps>
+
+### Tear down
+
+Uninstall Hyperswitch:
+
+```bash
+helm uninstall hypers-v1 -n hyperswitch
+```
+
+Delete the GKE cluster:
+
+```bash
+gcloud container clusters delete hypers-cluster \
+  --region us-central1 \
+  --project <your-project-id> \
+  --quiet
+```
+
+  </Tab>
+  <Tab title="Azure (AKS)">
+
+### Set up an AKS cluster
+
+<Steps>
+  <Step title="Install required tools">
+    Install the following if you do not already have them:
+
+    - [Azure CLI (`az`)](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+    - [kubectl](https://kubernetes.io/docs/tasks/tools/)
+    - [Helm](https://helm.sh/docs/intro/install/)
+  </Step>
+
+  <Step title="Log in and create a resource group">
+    ```bash
+    az login
+    az group create --name hyperswitch-rg --location eastus
+    ```
+  </Step>
+
+  <Step title="Create the AKS cluster">
+    ```bash
+    az aks create \
+      --resource-group hyperswitch-rg \
+      --name hypers-cluster \
+      --node-count 2 \
+      --node-vm-size Standard_D4s_v3 \
+      --generate-ssh-keys
+    ```
+
+    `Standard_D4s_v3` provides 4 vCPU and 16 GB RAM per node.
+  </Step>
+
+  <Step title="Fetch cluster credentials">
+    ```bash
+    az aks get-credentials --resource-group hyperswitch-rg --name hypers-cluster
+    ```
+
+    Verify nodes:
+
+    ```bash
+    kubectl get nodes
+    ```
+  </Step>
+</Steps>
+
+### Deploy Hyperswitch
+
+<Steps>
+  <Step title="Label nodes and create namespace">
+    ```bash
+    kubectl label nodes <your-node-name> node-type=generic-compute
+    kubectl create namespace hyperswitch
+    ```
+  </Step>
+
+  <Step title="Install the Helm chart">
+    ```bash
+    helm install hypers-v1 hyperswitch/hyperswitch-stack -n hyperswitch
+    ```
+
+    Watch pod status:
+
+    ```bash
+    kubectl get pods -n hyperswitch --watch
+    ```
+  </Step>
+
+  <Step title="Access the services">
+    ```bash
+    kubectl port-forward service/hyperswitch-server 8080:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hyperswitch-control-center 9000:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hyperswitch-web 9050:9050 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hypers-v1-grafana 3000:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/mailhog 8025:8025 -n hyperswitch > /dev/null 2>&1 &
+    ```
+  </Step>
+</Steps>
+
+### Tear down
+
+```bash
+helm uninstall hypers-v1 -n hyperswitch
+az aks delete --resource-group hyperswitch-rg --name hypers-cluster --yes --no-wait
+```
+
+  </Tab>
+  <Tab title="Local (Minikube)">
+
+### Run on Minikube
+
+Minikube is suitable for local development and testing. It is not recommended for production use.
+
+<Steps>
+  <Step title="Install Minikube">
+    Follow the [Minikube installation guide](https://minikube.sigs.k8s.io/docs/start/) for your operating system.
+  </Step>
+
+  <Step title="Start a cluster with enough resources">
+    ```bash
+    minikube start --cpus 4 --memory 8192
+    ```
+  </Step>
+
+  <Step title="Label the node and create namespace">
+    ```bash
+    kubectl label nodes minikube node-type=generic-compute
+    kubectl create namespace hyperswitch
+    ```
+  </Step>
+
+  <Step title="Add the Helm repo and install">
+    ```bash
+    helm repo add hyperswitch https://juspay.github.io/hyperswitch-helm
+    helm repo update
+    helm install hypers-v1 hyperswitch/hyperswitch-stack -n hyperswitch
+    ```
+
+    Watch pod startup:
+
+    ```bash
+    kubectl get pods -n hyperswitch --watch
+    ```
+  </Step>
+
+  <Step title="Access services via port-forwarding">
+    ```bash
+    kubectl port-forward service/hyperswitch-server 8080:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hyperswitch-control-center 9000:80 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/hyperswitch-web 9050:9050 -n hyperswitch > /dev/null 2>&1 &
+    kubectl port-forward service/mailhog 8025:8025 -n hyperswitch > /dev/null 2>&1 &
+    ```
+
+    Open the Control Center at `http://localhost:9000`.
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+---
+
+## Customize the deployment
+
+To modify configuration, clone the Helm chart repository and edit `values.yaml`:
+
+```bash
+git clone https://github.com/juspay/hyperswitch-helm.git
+```
+
+Edit `hyperswitch-helm/charts/incubator/hyperswitch-stack/values.yaml` with your settings, then apply with:
+
+```bash
+helm upgrade --install hypers-v1 hyperswitch/hyperswitch-stack \
+  -n hyperswitch \
+  -f hyperswitch-stack/values.yaml
+```
+
+Key configuration areas in `values.yaml`:
+
+- **App Server secrets** — database URL, Redis host, Admin API key, Apple Pay certificate
+- **Autoscaling** — HPA min/max replicas and CPU target thresholds
+- **Ingress** — hostname, TLS certificate references
+- **Monitoring** — Grafana credentials, Prometheus remote write endpoint
+
+<Warning>
+  Before deploying to production, rotate all default values for API keys and secrets defined in the chart. See the [App Server secrets reference](https://github.com/juspay/hyperswitch-helm/tree/main/charts/incubator/hyperswitch-stack#app-server-secrets) for the full list.
+</Warning>
+
+---
+
+## Update to a new release
+
+Hyperswitch publishes stable releases monthly via the [hyperswitch-suite repository](https://github.com/juspay/hyperswitch-suite/releases). To update:
+
+```bash
+helm repo update
+helm upgrade hypers-v1 hyperswitch/hyperswitch-stack -n hyperswitch
+```
+
+<Warning>
+  Do not use nightly builds in production. Nightly releases are developer builds that are not production-tested.
+</Warning>
+
+Check the release notes before upgrading — each release includes notes on new features, bug fixes, database migrations, and any breaking changes.
+
+---
+
+## Troubleshooting
+
+**View logs for a specific pod:**
+
+```bash
+kubectl logs <pod-name> -n hyperswitch
+```
+
+**List recent events in the namespace:**
+
+```bash
+kubectl get events -n hyperswitch --sort-by='.metadata.creationTimestamp'
+```
+
+**Reinstall after a failed deployment:**
+
+```bash
+helm uninstall hypers-v1 -n hyperswitch
+helm install hypers-v1 hyperswitch/hyperswitch-stack -n hyperswitch
+```
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Going live checklist" icon="rocket" href="/deployment/going-live">
+    Complete the production readiness checklist before accepting real payments.
+  </Card>
+  <Card title="Deploy on AWS" icon="aws" href="/deployment/aws">
+    Prefer AWS? Use the CDK script to deploy the full stack with a single command.
+  </Card>
+</CardGroup>

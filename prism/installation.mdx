@@ -1,0 +1,246 @@
+---
+title: "Installation"
+description: "Install Prism in Node.js, Python, Java, or PHP and configure your first connector client."
+---
+
+Prism ships as a native package for each supported language. The SDK bundles the Rust core and loads it automatically — you do not need to install Rust or run a separate process.
+
+## Prerequisites
+
+<AccordionGroup>
+  <Accordion title="Node.js">
+    - Node.js 16 or later
+    - npm, yarn, or pnpm
+
+    FFI bindings require native compilation. On most systems the prebuilt binary is downloaded automatically during install.
+  </Accordion>
+  <Accordion title="Python">
+    - Python 3.9 or later
+    - pip
+
+    The package uses `ctypes` for FFI. No additional system libraries are required.
+  </Accordion>
+  <Accordion title="Java">
+    - Java 11 or later (JDK)
+    - Maven 3.6+ or Gradle 7+
+
+    The SDK uses JNI bindings. The native library is bundled in the JAR.
+  </Accordion>
+  <Accordion title="PHP">
+    - PHP 8.0 or later
+    - Composer
+    - PHP FFI extension enabled (`extension=ffi` in your `php.ini`)
+  </Accordion>
+  <Accordion title="Building from source (optional)">
+    If you need to compile from source instead of using the prebuilt binary:
+
+    - Rust 1.70 or later
+    - Protocol Buffers compiler (`protoc`)
+
+    ```bash
+    git clone https://github.com/juspay/hyperswitch-prism.git
+    cd hyperswitch-prism
+    cargo build --release
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Install the package
+
+<CodeGroup>
+
+```bash npm
+npm install hyperswitch-prism
+```
+
+```bash yarn
+yarn add hyperswitch-prism
+```
+
+```bash pnpm
+pnpm add hyperswitch-prism
+```
+
+```bash pip
+pip install hyperswitch-prism
+```
+
+```xml Maven (pom.xml)
+<dependency>
+    <groupId>com.juspay.hyperswitch</groupId>
+    <artifactId>hyperswitch-prism</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+```groovy Gradle (build.gradle)
+implementation 'com.juspay.hyperswitch:hyperswitch-prism:1.0.0'
+```
+
+```bash Composer
+composer require juspay/hyperswitch-prism
+```
+
+</CodeGroup>
+
+## Configure a connector client
+
+After installing, create a `PaymentClient` configured for your payment processor. The examples below show how to configure both Stripe and Adyen clients, which is the typical multi-processor setup.
+
+<Tabs>
+  <Tab title="Node.js">
+    ```javascript index.js
+    const { PaymentClient } = require('hyperswitch-prism');
+    const { ConnectorConfig, ConnectorSpecificConfig, SdkOptions, Environment } = require('hyperswitch-prism').types;
+
+    // Configure Stripe client
+    const stripeConfig = ConnectorConfig.create({
+      options: SdkOptions.create({ environment: Environment.SANDBOX }),
+    });
+    stripeConfig.connectorConfig = ConnectorSpecificConfig.create({
+      stripe: { apiKey: { value: process.env.STRIPE_API_KEY } }
+    });
+    const stripeClient = new PaymentClient(stripeConfig);
+
+    // Configure Adyen client
+    const adyenConfig = ConnectorConfig.create({
+      options: SdkOptions.create({ environment: Environment.SANDBOX }),
+    });
+    adyenConfig.connectorConfig = ConnectorSpecificConfig.create({
+      adyen: {
+        apiKey: { value: process.env.ADYEN_API_KEY },
+        merchantAccount: process.env.ADYEN_MERCHANT_ACCOUNT
+      }
+    });
+    const adyenClient = new PaymentClient(adyenConfig);
+    ```
+  </Tab>
+  <Tab title="Python">
+    ```python main.py
+    import os
+    from hyperswitch_prism import PaymentClient
+    from hyperswitch_prism.generated import sdk_config_pb2
+
+    # Configure Stripe client
+    stripe_config = sdk_config_pb2.ConnectorConfig(
+      options=sdk_config_pb2.SdkOptions(environment=sdk_config_pb2.Environment.SANDBOX),
+    )
+    stripe_config.connector_config.stripe.api_key.value = os.environ["STRIPE_API_KEY"]
+    stripe_client = PaymentClient(stripe_config)
+
+    # Configure Adyen client
+    adyen_config = sdk_config_pb2.ConnectorConfig(
+      options=sdk_config_pb2.SdkOptions(environment=sdk_config_pb2.Environment.SANDBOX),
+    )
+    adyen_config.connector_config.adyen.api_key.value = os.environ["ADYEN_API_KEY"]
+    adyen_config.connector_config.adyen.merchant_account = os.environ["ADYEN_MERCHANT_ACCOUNT"]
+    adyen_client = PaymentClient(adyen_config)
+    ```
+  </Tab>
+  <Tab title="Java">
+    ```java Main.java
+    import com.juspay.hyperswitch.prism.PaymentClient;
+    import com.juspay.hyperswitch.prism.config.*;
+
+    // Configure Stripe client
+    ConnectorConfig stripeConfig = ConnectorConfig.builder()
+      .options(SdkOptions.builder()
+        .environment(Environment.SANDBOX)
+        .build())
+      .connectorSpecificConfig(ConnectorSpecificConfig.builder()
+        .stripe(StripeConfig.builder()
+          .apiKey(SecretString.of(System.getenv("STRIPE_API_KEY")))
+          .build())
+        .build())
+      .build();
+    PaymentClient stripeClient = new PaymentClient(stripeConfig);
+
+    // Configure Adyen client
+    ConnectorConfig adyenConfig = ConnectorConfig.builder()
+      .options(SdkOptions.builder()
+        .environment(Environment.SANDBOX)
+        .build())
+      .connectorSpecificConfig(ConnectorSpecificConfig.builder()
+        .adyen(AdyenConfig.builder()
+          .apiKey(SecretString.of(System.getenv("ADYEN_API_KEY")))
+          .merchantAccount(System.getenv("ADYEN_MERCHANT_ACCOUNT"))
+          .build())
+        .build())
+      .build();
+    PaymentClient adyenClient = new PaymentClient(adyenConfig);
+    ```
+  </Tab>
+  <Tab title="PHP">
+    ```php index.php
+    <?php
+    require_once 'vendor/autoload.php';
+
+    use HyperswitchPrism\PaymentClient;
+    use HyperswitchPrism\Config\ConnectorConfig;
+    use HyperswitchPrism\Config\Environment;
+
+    // Configure Stripe client
+    $stripeConfig = ConnectorConfig::create([
+      'environment' => Environment::SANDBOX,
+      'stripe' => [
+        'api_key' => $_ENV['STRIPE_API_KEY']
+      ]
+    ]);
+    $stripeClient = new PaymentClient($stripeConfig);
+
+    // Configure Adyen client
+    $adyenConfig = ConnectorConfig::create([
+      'environment' => Environment::SANDBOX,
+      'adyen' => [
+        'api_key' => $_ENV['ADYEN_API_KEY'],
+        'merchant_account' => $_ENV['ADYEN_MERCHANT_ACCOUNT']
+      ]
+    ]);
+    $adyenClient = new PaymentClient($adyenConfig);
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  Set `environment` to `Environment.SANDBOX` during development and `Environment.PRODUCTION` when going live. Use test API keys from your processor's dashboard for sandbox mode.
+</Tip>
+
+## Environment variables
+
+Store credentials in environment variables rather than hardcoding them. The examples above read from:
+
+| Variable | Description |
+|---|---|
+| `STRIPE_API_KEY` | Stripe secret key (starts with `sk_test_` or `sk_live_`) |
+| `ADYEN_API_KEY` | Adyen API key from the Adyen Customer Area |
+| `ADYEN_MERCHANT_ACCOUNT` | Your Adyen merchant account name |
+
+<Warning>
+  Never commit API keys to source control. Use a secrets manager or `.env` file excluded from your repository.
+</Warning>
+
+## Verify the installation
+
+Once configured, call `createOrder` with a minimal payload to confirm the SDK is wired up correctly:
+
+```javascript
+const order = await stripeClient.createOrder({
+  merchantOrderId: 'test-install-001',
+  amount: { minorAmount: 100, currency: 'USD' },
+  orderType: 'PAYMENT'
+});
+console.log('Connected. Order ID:', order.connectorOrderId);
+```
+
+A successful response with a `connectorOrderId` confirms your installation and credentials are working.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="play" href="/prism/quickstart">
+    Build a complete payment flow — create order, authorize, capture, and refund.
+  </Card>
+  <Card title="API reference" icon="book" href="/prism/api-reference">
+    Full reference for all services and their request/response fields.
+  </Card>
+</CardGroup>

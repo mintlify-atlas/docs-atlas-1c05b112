@@ -1,0 +1,131 @@
+---
+title: "Prism SDK overview"
+description: "A stateless, unified connector library for AI agents and developers to integrate with any payment processor using a single schema."
+---
+
+Prism is a high-performance payment abstraction library that gives you one API, one set of types, and one mental model for 100+ payment connectors. It is part of [Juspay Hyperswitch](https://hyperswitch.io/) — the open-source, composable payments platform trusted by leading brands worldwide.
+
+## The problem
+
+Every payment processor ships its own API surface. Stripe uses PaymentIntents. Adyen uses payments. PayPal uses orders. Each has different field names, different status enums, different error formats, and different behavior in production versus what the documentation describes. That tribal knowledge accumulates over months and makes it hard for both developers and AI agents to implement reliable integrations.
+
+| Without Prism | With Prism |
+|---|---|
+| 100+ different API schemas | Single unified schema |
+| Months of integration work or never-ending agent loops | Hours to integrate, agent-driven |
+| Brittle, provider-specific code | Portable, provider-agnostic code |
+| Hard to switch providers | Change providers in one line |
+
+## What Prism is
+
+**Prism is a stateless, unified connector library** for AI agents and developers to connect with any payment processor. It offers hardened transformations built through iterative testing on live payment processor environments.
+
+You can embed Prism directly in your server application using its multi-language SDKs, or run it as a standalone gRPC microservice.
+
+<CardGroup cols={2}>
+  <Card title="Stateless by design" icon="shield-halved">
+    No PII or PCI data is stored. API keys are never logged or exposed. You can continue outsourcing PCI compliance to a third-party vault or processor.
+  </Card>
+  <Card title="Zero overhead" icon="bolt">
+    A Rust core with native bindings provides language-idiomatic performance without bridges or interpreters.
+  </Card>
+  <Card title="100+ connectors" icon="plug">
+    Stripe, Adyen, Braintree, PayPal, Worldpay, and more — with global coverage for cards, wallets, bank transfers, BNPL, and regional methods.
+  </Card>
+  <Card title="Multi-language SDKs" icon="code">
+    Node.js, Python, Java, and PHP SDKs with idiomatic interfaces. More languages available via the gRPC service.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+Prism uses a three-layer architecture that separates the developer-facing interface from the connector implementation details.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Your Application                         │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                         Prism Library                           │
+│     (Type-safe, idiomatic interface, multi-language SDK)        │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                                 ▼
+         ┌───────────────────────┼───────────────────────┬───────────────────────┐
+         ▼                       ▼                       ▼                       ▼
+   ┌──────────┐           ┌──────────┐           ┌──────────┐           ┌──────────┐
+   │  Stripe  │           │  Adyen   │           │ Braintree│           │ 50+ more │
+   └──────────┘           └──────────┘           └──────────┘           └──────────┘
+```
+
+| Layer | What it does |
+|---|---|
+| **Interface layer** | Language-idiomatic SDKs (Node.js, Python, Java, PHP, .NET, Go). You call `client.payments.authorize()` with native types. |
+| **Binding layer** | Native gRPC clients handle serialization and transport at full performance, with no language bridges. |
+| **Core layer** | A Rust gRPC server with connector adapters for 100+ processors. Handles request routing, field transformation, and error normalization. |
+
+The core layer is the single source of truth for payment logic. Adding new connectors requires only a connector adapter implementation — the SDKs require zero changes.
+
+## Analogy
+
+Prism is to payment processors what [LiteLLM](https://github.com/BerriAI/litellm) is to LLM providers, what [Prisma](https://www.prisma.io/) is to databases, and what [Rclone](https://rclone.org/) is to cloud storage — a unified abstraction that eliminates lock-in without sacrificing performance.
+
+## Switching providers in one line
+
+Once you have integrated Prism, switching from one processor to another is a client swap. The request code stays exactly the same.
+
+```javascript
+// Before: using Stripe
+const client = new ConnectorClient({
+  connectors: { stripe: { apiKey: process.env.STRIPE_API_KEY } }
+});
+
+// After: switching to Braintree — only the client config changes
+const client = new ConnectorClient({
+  connectors: {
+    braintree: {
+      publicKey: process.env.BRAINTREE_PUBLIC_KEY,
+      privateKey: process.env.BRAINTREE_PRIVATE_KEY,
+      merchantAccountId: process.env.BRAINTREE_MERCHANT_ID
+    }
+  }
+});
+
+// This call is identical regardless of which processor is active
+const order = await client.payments.createOrder({
+  amount: { minorAmount: 1000, currency: Currency.USD },
+  merchantOrderId: 'order-123'
+});
+```
+
+## Supported languages
+
+| Language | Minimum version | Install |
+|---|---|---|
+| Node.js | 16+ | `npm install hyperswitch-prism` |
+| Python | 3.9+ | `pip install hyperswitch-prism` |
+| Java | 11+ | Maven / Gradle dependency |
+| PHP | 8.0+ | `composer require juspay/hyperswitch-prism` |
+
+<Note>
+  All languages bind to the same Rust core via gRPC. Behavior, error codes, and response shapes are identical across every SDK.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/prism/installation">
+    Install Prism in your language and configure your first connector client.
+  </Card>
+  <Card title="Quickstart" icon="play" href="/prism/quickstart">
+    Create an order, authorize a payment, capture funds, and process a refund in under 10 minutes.
+  </Card>
+  <Card title="API reference" icon="book" href="/prism/api-reference">
+    Full reference for all services: Payment, Refund, Dispute, Recurring, Event, and more.
+  </Card>
+  <Card title="Intelligent routing" icon="route" href="https://docs.hyperswitch.io/explore-hyperswitch/workflows/intelligent-routing">
+    Add routing rules to send EUR to Adyen and USD to Stripe automatically.
+  </Card>
+</CardGroup>

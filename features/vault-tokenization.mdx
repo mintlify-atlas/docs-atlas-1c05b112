@@ -1,0 +1,191 @@
+---
+title: "Vault & Tokenization"
+description: "Store payment credentials in a PCI-compliant vault and reuse them across processors with multi-PSP tokenization and network token support."
+---
+
+Hyperswitch's modular vault stores sensitive card data — primary account numbers (PAN), expiry, and cardholder names — outside your application environment. You work exclusively with tokens. The vault issues a processor-agnostic token that can be used to initiate payments on any connected processor, eliminating vendor lock-in on saved payment methods.
+
+## Vault architecture and deployment models
+
+Hyperswitch supports several vault configurations. Choose the model that matches your PCI scope and hosting preference.
+
+<CardGroup cols={2}>
+  <Card title="SaaS + Juspay vault" icon="cloud">
+    Juspay hosts both the Hyperswitch orchestration layer and the vault. PCI compliance is handled entirely by Juspay. Recommended for most merchants using Hyperswitch SaaS.
+  </Card>
+  <Card title="SaaS + third-party vault" icon="building">
+    Juspay hosts orchestration; your card data goes to an external vault provider (VGS, Tokenex, or your own). Suited for merchants already invested in a third-party vault.
+  </Card>
+  <Card title="Self-hosted + in-house PCI" icon="server">
+    You host both the Hyperswitch orchestration layer and the vault. You own full PCI DSS compliance scope. Suited for large enterprises with existing PCI infrastructure.
+  </Card>
+  <Card title="Self-hosted + outsourced PCI" icon="shield-halved">
+    You host orchestration but outsource card data storage to Juspay's hosted vault or a third-party provider (VGS, Tokenex). You control orchestration logic without taking on PCI scope for raw card data.
+  </Card>
+</CardGroup>
+
+<Note>
+  All vault models support the same API surface. Switching vault providers does not require changes to your payment integration.
+</Note>
+
+## What the vault stores
+
+- **Primary account number (PAN)** — raw card number, never returned in API responses after storage
+- **Card expiry** — month and year
+- **Cardholder name** — optional
+- **Network tokens** — processor-issued tokens from Visa, Mastercard, Amex, Discover
+
+## Setup flows
+
+### SaaS orchestration with Juspay Vault
+
+No additional infrastructure is required. When a customer saves a payment method during checkout, Hyperswitch automatically vaults the card and returns a `payment_method_id` token.
+
+<Steps>
+  <Step title="Enable saved payment methods">
+    In the Control Center, navigate to **Settings** → **Payment Methods** and enable **Save card** for your business profile.
+  </Step>
+  <Step title="Collect and save a card">
+    When creating a payment, set `setup_future_usage` to `off_session` (for unattended recurring) or `on_session` (for future customer-present payments). Hyperswitch vaults the card on successful payment.
+
+    ```bash
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/payments \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: <your-api-key>' \
+      --data '{
+        "amount": 1000,
+        "currency": "USD",
+        "customer_id": "cus_abc123",
+        "confirm": true,
+        "setup_future_usage": "off_session",
+        "payment_method": "card",
+        "payment_method_data": {
+          "card": {
+            "card_number": "4242424242424242",
+            "card_exp_month": "12",
+            "card_exp_year": "26",
+            "card_holder_name": "Jane Smith",
+            "card_cvc": "123"
+          }
+        }
+      }'
+    ```
+
+    The response includes `payment_method_id` — store this against the customer in your system.
+  </Step>
+  <Step title="Use the token for future payments">
+    For subsequent payments, pass `payment_method_id` instead of raw card data. Hyperswitch retrieves the card from the vault and routes the payment to the appropriate processor.
+
+    ```bash
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/payments \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: <your-api-key>' \
+      --data '{
+        "amount": 1000,
+        "currency": "USD",
+        "customer_id": "cus_abc123",
+        "confirm": true,
+        "off_session": true,
+        "payment_method": "card",
+        "payment_method_id": "pm_<vault_token>"
+      }'
+    ```
+  </Step>
+</Steps>
+
+### Connecting an external vault (VGS / Tokenex)
+
+If you already have an external vault provider, configure Hyperswitch to forward tokenized card data to that provider instead of Juspay's vault.
+
+<Steps>
+  <Step title="Configure the external vault connector">
+    In the Control Center, navigate to **Connectors** → **Vault** and add your external vault provider credentials (VGS vault ID, inbound route, or Tokenex credentials).
+  </Step>
+  <Step title="Enable proxy-based tokenization">
+    Hyperswitch routes card data through the external vault's proxy API before sending to the payment processor. Raw PAN never touches your servers or Hyperswitch's orchestration layer.
+  </Step>
+  <Step title="Use payment_method_id as normal">
+    Once configured, the API surface is identical. The `payment_method_id` returned corresponds to the token in your external vault.
+  </Step>
+</Steps>
+
+### Server-to-server tokenization
+
+If you collect card data server-side (outside the Hyperswitch SDK), you can create a payment method token directly via the API.
+
+```bash
+curl --request POST \
+  --url https://sandbox.hyperswitch.io/payment_methods \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: <your-api-key>' \
+  --data '{
+    "customer_id": "cus_abc123",
+    "payment_method": "card",
+    "payment_method_data": {
+      "card": {
+        "card_number": "4111111111111111",
+        "card_exp_month": "09",
+        "card_exp_year": "27",
+        "card_holder_name": "John Doe"
+      }
+    }
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "payment_method_id": "pm_8a3bc92f4d1e5678",
+  "customer_id": "cus_abc123",
+  "payment_method": "card",
+  "card": {
+    "last4_digits": "1111",
+    "card_exp_month": "09",
+    "card_exp_year": "27",
+    "card_holder_name": "John Doe",
+    "card_network": "visa"
+  },
+  "created": "2026-03-31T10:00:00Z"
+}
+```
+
+The raw card number is immediately replaced with the vault token. Use `payment_method_id` for all subsequent payments.
+
+## Network tokenization
+
+Network tokens are payment credentials issued directly by card networks (Visa, Mastercard, Amex) to replace the raw PAN. They are processor-specific and rotate automatically, reducing fraud exposure.
+
+Hyperswitch can request and manage network tokens on your behalf:
+
+- When a card is vaulted, Hyperswitch can simultaneously request a network token from the card network.
+- For subsequent payments, Hyperswitch detects whether the target processor supports network tokens and submits the network token instead of the PAN.
+- If the processor rejects the network token (token expired, not supported), Hyperswitch can automatically fall back to a clear-PAN retry. See [Smart Retries](/features/smart-retries) for details on the Clear PAN retry flow.
+
+<Tip>
+  Network tokens generally yield higher authorization rates than raw PANs because issuers recognize them as lower-fraud-risk credentials.
+</Tip>
+
+## Listing saved payment methods for a customer
+
+```bash
+curl --request GET \
+  --url 'https://sandbox.hyperswitch.io/customers/cus_abc123/payment_methods' \
+  --header 'api-key: <your-api-key>'
+```
+
+Use this endpoint to populate a saved-card selector in your checkout UI.
+
+## Deleting a saved payment method
+
+```bash
+curl --request DELETE \
+  --url https://sandbox.hyperswitch.io/payment_methods/pm_8a3bc92f4d1e5678 \
+  --header 'api-key: <your-api-key>'
+```
+
+<Warning>
+  Deleting a `payment_method_id` removes the token from the vault. Any subsequent payment using that token will fail. Ensure your application removes the reference before deletion.
+</Warning>

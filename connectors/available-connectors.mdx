@@ -1,0 +1,397 @@
+---
+title: "Available connectors"
+description: "Complete list of payment processors, payout providers, and authentication connectors supported by Hyperswitch, with payment method details and setup notes for each."
+---
+
+Hyperswitch supports 50+ connectors across payment processors, payout providers, fraud tools, and authentication providers. The sections below describe each connector's supported payment methods and any connector-specific setup requirements.
+
+<Note>
+  The most up-to-date connector and payment method matrix is available at [integrations.hyperswitch.io](https://integrations.hyperswitch.io). The list below covers the major processors with additional detail.
+</Note>
+
+## Payment processors
+
+<AccordionGroup>
+  <Accordion title="Stripe">
+    Stripe is a full-stack payments platform for internet businesses of all sizes. It supports cards, wallets, and a broad range of local payment methods.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover, UnionPay), Apple Pay, Google Pay, Link, SEPA direct debit, ACH, BACS, iDEAL, Sofort, Bancontact, EPS, Giropay, Klarna, Afterpay, Affirm, and more.
+
+    **Required credentials:** Secret Key (starts with `sk_live_` for production, `sk_test_` for sandbox)
+
+    **Setup notes:**
+    - Request that Stripe enable raw card data handling for your account (required for Hyperswitch to tokenize cards). Contact Stripe support to enable this.
+    - Configure webhooks in your Stripe dashboard under **Developers → Webhooks**. Create a new endpoint pointing to the Hyperswitch webhook URL found in **Connectors → Stripe** in the Control Center.
+    - Ensure payment methods are enabled in both Hyperswitch and your Stripe dashboard under **Settings → Payments → Payment methods**.
+
+    **Test card:** `4242 4242 4242 4242`, expiry `12/25`, CVV `100`
+  </Accordion>
+
+  <Accordion title="Adyen">
+    Adyen is a global payments company with strong coverage for both online and in-person payments across Europe, North America, and Asia-Pacific.
+
+    **Supported payment methods:** Cards (all major networks), Apple Pay, Google Pay, PayPal, iDEAL, Sofort, Klarna, Bancontact, EPS, Giropay, and many local payment methods.
+
+    **Required credentials:** API Key and Merchant Account ID (found in your Adyen dashboard under **Developers → API credentials**)
+
+    **Setup notes:**
+    - Contact Adyen support (`support@adyen.com`) to enable raw card data handling for your account. This is required for Hyperswitch to process card payments through Adyen.
+    - Configure a standard webhook in **Developers → Webhooks** in your Adyen dashboard. Copy the HMAC key and enter it as the Source Verification Key in the Hyperswitch Control Center.
+    - For Klarna, the following fields are required or strongly recommended for good conversion: `email`, `billing.first_name`, `billing.last_name`, `billing.city`, `billing.country`, `billing.line1`, `billing.zip`, and `order_details`. A customer record (`customer_id`) must also be created via the Hyperswitch API.
+
+    **Country and currency coverage for key methods:**
+
+    | Method | Regions | Currencies |
+    |---|---|---|
+    | Apple Pay | AU, NZ, JP, HK, SG, BR, US, CA, GB, and most of Europe | AUD, CHF, CAD, EUR, GBP, HKD, SGD, USD |
+    | Google Pay | AU, NZ, JP, HK, SG, BR, US, CA, GB, and most of Europe | All enabled on your Adyen account |
+    | PayPal | AU, NZ, JP, HK, US, CA, GB, BR, and most of Europe and Asia | AUD, BRL, CAD, EUR, GBP, USD, and 15+ others |
+    | iDEAL | NL | EUR |
+    | Klarna | AU, AT, BE, CA, CZ, DK, FI, FR, DE, IT, NL, NO, PL, ES, SE, CH, GB, US | AUD, EUR, CAD, GBP, USD, and others |
+
+    **Test card:** `4000 0200 0000 0000`, expiry `03/30`, CVV `737`
+
+    <Note>
+      In the Adyen sandbox environment, automatic capture does not work for Klarna and PayPal — payments must be explicitly captured before refunds can be processed. This is an Adyen sandbox behavior; contact Adyen support if the same issue occurs in production.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Braintree">
+    Braintree is a PayPal-owned payment processor that supports both online payments and marketplace use cases. A PayPal Business account is required.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover), PayPal, Venmo, Apple Pay, Google Pay.
+
+    **Required credentials:** Merchant ID, Public Key, and Private Key (found in your Braintree dashboard under **Settings → API**)
+
+    **Setup notes:**
+    - Configure webhooks in your Braintree dashboard under **Settings → API → Webhooks**.
+    - Braintree's sandbox and production environments use separate credential sets.
+
+    **Test card:** `4111 1111 1111 1111`, expiry `12/25`, CVV `100`
+  </Accordion>
+
+  <Accordion title="PayPal">
+    PayPal provides a widely recognized digital wallet and payment gateway. It supports redirect-based and native SDK payment flows.
+
+    **Supported payment methods:** PayPal Wallet, Venmo (US), cards (via PayPal's processing).
+
+    **Required credentials:** Client ID and Client Secret (found in your PayPal developer dashboard under **My Apps & Credentials**)
+
+    **Setup notes:**
+    - Ensure the payment methods you enable in Hyperswitch match those configured in your PayPal dashboard.
+    - PayPal uses OAuth-based authentication. Hyperswitch exchanges your client credentials for an access token on each request.
+  </Accordion>
+
+  <Accordion title="Cybersource">
+    Cybersource, a Visa company, offers global payment solutions with a focus on enterprise merchants and digital-first businesses.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover, UnionPay), Apple Pay, Google Pay.
+
+    **Required credentials:** API Key, Secret Key, and Merchant ID (found in your Cybersource Business Center dashboard)
+
+    **Setup notes:**
+    - Cybersource supports Apple Pay and Google Pay with dedicated setup flows. See the connector-specific guides in the source documentation for wallet configuration details.
+    - Cybersource is also supported as a payout processor for card disbursements.
+  </Accordion>
+
+  <Accordion title="Checkout.com">
+    Checkout.com is a global payment processor with strong coverage in Europe, the Middle East, and Asia.
+
+    **Supported payment methods:** Cards (all major networks), Apple Pay, Google Pay, SEPA direct debit, Sofort, Klarna, and local methods.
+
+    **Required credentials:** Secret Key (found in your Checkout.com Hub under **Developers → Keys**)
+
+    **Test card:** `4242 4242 4242 4242`, expiry `12/25`, CVV `100`
+  </Accordion>
+
+  <Accordion title="Worldpay">
+    Worldpay is one of the largest global payment processors, with broad coverage for card-present and card-not-present transactions.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover, UnionPay), Apple Pay, Google Pay, and select local methods.
+
+    **Required credentials:** Merchant code and XML password (obtained from your Worldpay account manager)
+  </Accordion>
+
+  <Accordion title="Authorize.net">
+    Authorize.net is a widely used US-focused payment gateway owned by Visa, suited for small and medium-sized merchants.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover, JCB), Apple Pay, Google Pay, ACH.
+
+    **Required credentials:** API Login ID and Transaction Key (found in your Authorize.net merchant interface under **Account → Settings → Security Settings → API Credentials**)
+
+    **Test card:** `4242 4242 4242 4242`, expiry `12/25`, CVV `100`
+  </Accordion>
+
+  <Accordion title="Bluesnap">
+    BlueSnap is a global payment processor with built-in fraud prevention and support for 100+ currencies.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover), Apple Pay, Google Pay, ACH, SEPA, and local methods.
+
+    **Required credentials:** API username and password (found in your BlueSnap merchant portal)
+
+    **Test card:** `6011 0001 8033 1112`, expiry `02/26`, CVV `123`
+  </Accordion>
+
+  <Accordion title="Nuvei">
+    Nuvei is a global payment technology company with strong coverage for high-risk verticals and alternative payment methods.
+
+    **Supported payment methods:** Cards, Apple Pay, Google Pay, and a broad range of APMs across Europe, LATAM, and Asia.
+
+    **Required credentials:** Merchant ID, Site ID, and Secret Key (found in your Nuvei Control Panel)
+
+    **Test card:** `4444 3333 2222 1111`, expiry `12/25`, CVV `123`
+  </Accordion>
+
+  <Accordion title="Klarna">
+    Klarna is a Swedish buy-now-pay-later provider with direct integration support in Hyperswitch, separate from Klarna via other connectors.
+
+    **Supported payment methods:** Pay Later, Pay in 3 / Pay in 4, Financing.
+
+    **Required credentials:** API Key (found in your Klarna Merchant Portal under **Settings → API Credentials**)
+
+    **Setup notes:**
+    - Klarna requires detailed order and customer data for good approval rates. Include `email`, billing address fields, and `order_details` in your payment requests.
+    - Supported in US and UK via direct integration.
+
+    **Test credentials:**
+    - US: Phone `+1 310 668 331`, OTP `123456`
+    - UK: Phone `+44 0808 258 0300`, OTP `123456`
+  </Accordion>
+
+  <Accordion title="Fiserv">
+    Fiserv is a large US-based financial services technology company providing payment processing for banks and merchants.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover).
+
+    **Required credentials:** API Key, API Secret, Merchant ID, and Terminal ID
+
+    **Test card:** `4005 5500 0000 0019`, expiry `02/35`, CVV `123`
+  </Accordion>
+
+  <Accordion title="Global Payments">
+    Global Payments is a worldwide payment technology company operating in over 100 countries.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover), digital wallets, and select local payment methods.
+
+    **Required credentials:** App ID and App Key (found in your Global Payments developer portal)
+
+    **Test card:** `4263 9700 0000 5262`, expiry `12/25`, CVV `100`
+  </Accordion>
+
+  <Accordion title="Worldline">
+    Worldline is a major European payment processor, formerly Ingenico ePayments, serving merchants across Europe and globally.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover), Apple Pay, Google Pay, iDEAL, Bancontact.
+
+    **Required credentials:** API Key ID, Secret API Key, and Merchant ID (found in your Worldline online payments portal)
+
+    **Test card:** `4012 0000 3333 0026`, expiry `12/25`, CVV `123`
+  </Accordion>
+
+  <Accordion title="Bank of America (BofA Merchant Services)">
+    Bank of America's merchant services platform for card-present and card-not-present transactions.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover), Apple Pay, Google Pay.
+
+    **Required credentials:** API Key, Secret Key, and Merchant ID
+  </Accordion>
+
+  <Accordion title="Mollie">
+    Mollie is a European payment processor known for its simple setup and strong coverage of local European payment methods.
+
+    **Supported payment methods:** Cards, iDEAL, Bancontact, EPS, Giropay, SOFORT, SEPA direct debit, Klarna, and others.
+
+    **Required credentials:** API Key (found in your Mollie dashboard under **Developers → API Keys**)
+  </Accordion>
+
+  <Accordion title="MultiSafepay">
+    MultiSafepay is a Dutch payment service provider with strong support for European payment methods.
+
+    **Supported payment methods:** Cards, iDEAL, Bancontact, Sofort, Klarna, SEPA, PayPal, Apple Pay, Google Pay, and more.
+
+    **Required credentials:** API Key (found in your MultiSafepay Control Panel)
+  </Accordion>
+
+  <Accordion title="Rapyd">
+    Rapyd is a fintech-as-a-service platform with broad global coverage for collection and payout methods.
+
+    **Supported payment methods:** Cards, bank transfers, wallets, and local payment methods across 100+ countries.
+
+    **Required credentials:** Access Key and Secret Key
+  </Accordion>
+
+  <Accordion title="dLocal">
+    dLocal specializes in emerging market payment processing for Latin America, Africa, and Asia.
+
+    **Supported payment methods:** Local cards, bank transfers, cash payment networks, and wallets across 40+ emerging market countries.
+
+    **Required credentials:** API Key, Secret Key, and HMAC key
+  </Accordion>
+
+  <Accordion title="Shift4">
+    Shift4 is a US-based payment processor with strong hospitality and enterprise commerce coverage.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover), Apple Pay, Google Pay.
+
+    **Required credentials:** API Key (found in your Shift4 dashboard)
+  </Accordion>
+
+  <Accordion title="ACI">
+    ACI Worldwide provides payment processing infrastructure for banks, merchants, and payment networks globally.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover), digital wallets.
+
+    **Required credentials:** Entity ID, API User, and API Password
+  </Accordion>
+
+  <Accordion title="Airwallex">
+    Airwallex is a global financial platform with strong multi-currency and cross-border payment capabilities.
+
+    **Supported payment methods:** Cards (Visa, Mastercard), Google Pay, Apple Pay, and select APMs.
+
+    **Required credentials:** API Key and Client ID (found in your Airwallex dashboard under **Developer → API Keys**)
+  </Accordion>
+
+  <Accordion title="Bambora">
+    Bambora (now Worldline) is a payment processor serving North America and Europe with online and in-store payment solutions.
+
+    **Supported payment methods:** Cards (Visa, Mastercard, Amex, Discover).
+
+    **Required credentials:** Merchant ID and API Passcode
+  </Accordion>
+
+  <Accordion title="Billwerk">
+    Billwerk is a subscription billing platform with integrated payment processing for European SaaS and subscription businesses.
+
+    **Supported payment methods:** Cards, SEPA direct debit, PayPal.
+
+    **Required credentials:** API Key and Sub-domain
+  </Accordion>
+
+  <Accordion title="PayU">
+    PayU is a payment processor serving emerging markets, with particularly strong coverage in India, Southeast Asia, Central and Eastern Europe, and Latin America.
+
+    **Supported payment methods:** Cards, net banking, UPI, wallets, and local payment methods.
+
+    **Required credentials:** Merchant Key and Merchant Salt
+  </Accordion>
+
+  <Accordion title="TrustPay">
+    TrustPay is a European payment service provider with strong coverage for Eastern European markets.
+
+    **Supported payment methods:** Cards, SEPA, bank transfers, and local Eastern European methods.
+
+    **Required credentials:** API Key and API Secret
+  </Accordion>
+
+  <Accordion title="Zen">
+    Zen is a European payment platform providing card and local payment method acceptance.
+
+    **Supported payment methods:** Cards, Przelewy24, and other local methods.
+
+    **Required credentials:** API Key
+  </Accordion>
+
+  <Accordion title="Prophetpay">
+    Prophetpay is a payment processor specializing in healthcare and high-risk verticals.
+
+    **Supported payment methods:** Cards.
+
+    **Required credentials:** API Key, API Secret, and Merchant Account
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Payout processors
+
+These connectors support disbursements — distributing funds to vendors, contractors, sellers, or partners.
+
+| Connector | Regions | Cards | Bank rails | Wallets |
+|---|---|---|---|---|
+| **Adyen** | Global | Major networks | SEPA, SWIFT, ACH | PayPal, Neteller, Skrill |
+| **Stripe** | Global | Major networks | SEPA | — |
+| **Wise** | Global | Major networks | SEPA, SWIFT, ACH | — |
+| **PayPal** | Global | — | — | PayPal, Venmo (US) |
+| **Cybersource** | Global | Major networks | — | — |
+| **Ebanx** | LATAM | — | Pix (beta) | — |
+
+For a complete guide to payouts, including bulk disbursements, smart retries, and payout links, see the [Payouts](/features/payouts) documentation.
+
+---
+
+## Open banking and bank transfer connectors
+
+<AccordionGroup>
+  <Accordion title="GoCardless">
+    GoCardless specializes in recurring bank debit and pull payment flows via direct debit rails.
+
+    **Supported methods:** ACH (US), BACS (UK), SEPA direct debit, Autogiro (SE), BECS (AU/NZ), PAD (CA)
+
+    **Required credentials:** Access Token (found in your GoCardless dashboard under **Developers → Access Tokens**)
+  </Accordion>
+
+  <Accordion title="Volt">
+    Volt provides open banking infrastructure for real-time account-to-account payments across Europe.
+
+    **Supported methods:** Open banking payments (UK and EU)
+
+    **Required credentials:** Username, Password, Client ID, and Client Secret
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Crypto payment connectors
+
+<AccordionGroup>
+  <Accordion title="Coinbase Commerce">
+    Coinbase Commerce enables merchants to accept cryptocurrency payments. Payments are settled in the customer's chosen cryptocurrency.
+
+    **Supported methods:** Bitcoin, Ethereum, Litecoin, USD Coin, and others supported by Coinbase Commerce.
+
+    **Required credentials:** API Key (found in your Coinbase Commerce dashboard under **Settings → API Keys**)
+  </Accordion>
+
+  <Accordion title="OpenNode">
+    OpenNode provides Bitcoin Lightning Network payment processing for merchants seeking fast, low-fee Bitcoin payments.
+
+    **Supported methods:** Bitcoin (Lightning Network and on-chain)
+
+    **Required credentials:** API Key (found in your OpenNode dashboard)
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 3DS authentication connectors
+
+<AccordionGroup>
+  <Accordion title="Netcetera">
+    Netcetera is a 3D Secure server and access control server (ACS) provider, enabling external or standalone 3DS authentication flows.
+
+    **Use cases:**
+    - Standalone 3DS authentication before payment authorization
+    - Native 3DS for mobile applications
+    - Decoupled 3DS flows
+
+    **Required credentials:** API Key and Endpoint URL (obtained from Netcetera)
+
+    Netcetera is configured as an authentication connector, not a payment processor. It works alongside your existing payment processors to provide 3DS frictionless or challenge flows.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Request a new connector
+
+If the processor you need is not listed here, you can request an integration through the [Hyperswitch Slack community](https://hyperswitch-io.slack.com/ssb/redirect). Hyperswitch can typically add a new PSP integration in approximately two weeks.
+
+<CardGroup cols={2}>
+  <Card title="Activate a connector" icon="plug" href="/connectors/activate-connector">
+    Step-by-step guide to add a connector to your account via the Control Center or API.
+  </Card>
+  <Card title="Connectors overview" icon="circle-info" href="/connectors/overview">
+    Learn how connectors work and what capabilities they support.
+  </Card>
+</CardGroup>

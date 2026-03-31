@@ -1,0 +1,392 @@
+---
+title: "Your First Payment"
+description: "Send a test transaction through Hyperswitch using the Control Center playground, the Postman collection, or the API directly."
+---
+
+Before you begin, you need a running Hyperswitch environment with at least one payment processor connected. If you have not done that yet, complete one of:
+
+- [Cloud Sandbox](/quickstart/cloud-sandbox) — hosted environment, no setup required
+- [Run Locally with Docker](/quickstart/local-docker) — full local stack via Docker
+
+Once your environment is ready and a connector is active, use any of the three approaches below to send a test payment.
+
+<Tabs>
+  <Tab title="Control Center">
+    The Control Center includes a built-in payment playground accessible from the Home dashboard. This is the fastest way to confirm your setup is working end-to-end.
+
+    ## Connect a dummy processor
+
+    If you have not yet connected a processor, go to **Connectors → Payment Processors** and connect the **fauxpay** dummy processor. No external credentials are required.
+
+    <Steps>
+      <Step title="Open the payment playground">
+        From the left navigation bar, click **Home**.
+
+        You will see a **Try it out** button on the dashboard. Click it to open the embedded payment form powered by the Hyperswitch Web SDK.
+      </Step>
+
+      <Step title="Enter test card details">
+        Use the following test card credentials in the payment form:
+
+        | Field | Value |
+        |---|---|
+        | Card number | `4242 4242 4242 4242` |
+        | Expiry date | Any future date (e.g. `12/26`) |
+        | CVC | Any 3 digits (e.g. `123`) |
+        | Name on card | Any name |
+
+        <Note>
+          This card number is a standard Stripe test card that is also accepted by most sandbox processors integrated with Hyperswitch. For processor-specific test cards, consult the processor's documentation.
+        </Note>
+      </Step>
+
+      <Step title="Submit the payment">
+        Click **Pay** (the button displays the amount configured in the playground, typically `$1.00`).
+
+        You should see a payment success confirmation screen. The transaction also appears in your **Analytics** view in the Control Center.
+      </Step>
+    </Steps>
+
+    If the payment fails, verify that:
+    - At least one connector is connected and active under **Connectors → Payment Processors**
+    - The connector has credit card payment methods enabled
+    - You are using a valid test card number for the connected processor
+  </Tab>
+
+  <Tab title="Postman">
+    The Hyperswitch Postman collection lets you test the full API flow — creating a merchant account, generating API keys, configuring a connector, and making payments — without writing any code.
+
+    ## Prerequisites
+
+    You need a running Hyperswitch instance (local Docker or cloud sandbox) and the admin API key from your setup. For Docker, find the admin API key in `config/docker_compose.toml` under the `api_key` field.
+
+    <Steps>
+      <Step title="Import the Postman collection">
+        Open the [Hyperswitch Postman workspace](https://www.postman.com/hyperswitch/workspace/hyperswitch-development/collection/25176162-630b5353-7002-44d1-8ba1-ead6c230f2e3) and fork or import the collection into your Postman account.
+
+        Set the `baseUrl` environment variable in Postman:
+        - **Local Docker**: `http://localhost:8080`
+        - **Cloud Sandbox**: use the API base URL from your sandbox account settings
+      </Step>
+
+      <Step title="Create a merchant account">
+        In the collection, run the **Merchant Account - Create** request. Replace `<admin-api-key>` in the headers with your actual admin API key.
+
+        ```bash
+        curl --location 'http://localhost:8080/accounts' \
+          --header 'Accept: application/json' \
+          --header 'Content-Type: application/json' \
+          --header 'api-key: <admin-api-key>' \
+          --data-raw '{
+            "merchant_id": "Test_merchant",
+            "merchant_name": "Test Retailer",
+            "merchant_details": {
+              "primary_email": "test@example.com"
+            },
+            "return_url": "https://example.com/payment-return",
+            "sub_merchants_enabled": false
+          }'
+        ```
+
+        The response includes the `merchant_id` and `publishable_key`. Save both values.
+      </Step>
+
+      <Step title="Create an API key">
+        Run the **API Key - Create** request. Replace `<your_merchant_id>` with the merchant ID from the previous step.
+
+        ```bash
+        curl --location 'http://localhost:8080/api_keys/<your_merchant_id>' \
+          --header 'Content-Type: application/json' \
+          --header 'Accept: application/json' \
+          --header 'api-key: <admin-api-key>' \
+          --data '{
+            "name": "Test API Key",
+            "description": null,
+            "expiration": "2026-12-31T00:00:00.000Z"
+          }'
+        ```
+
+        The response contains the plaintext API key. Store it securely — it is returned only once.
+      </Step>
+
+      <Step title="Connect a payment processor">
+        Run the **Payment Connector - Create** request to activate a processor on your merchant account.
+
+        ```bash
+        curl --location 'http://localhost:8080/account/<your_merchant_id>/connectors' \
+          --header 'Content-Type: application/json' \
+          --header 'Accept: application/json' \
+          --header 'api-key: <admin-api-key>' \
+          --data '{
+            "connector_type": "fiz_operations",
+            "connector_name": "stripe",
+            "connector_account_details": {
+              "auth_type": "HeaderKey",
+              "api_key": "<stripe-test-api-key>"
+            },
+            "test_mode": true,
+            "disabled": false,
+            "payment_methods_enabled": [
+              {
+                "payment_method": "card",
+                "payment_method_types": [
+                  {
+                    "payment_method_type": "credit",
+                    "card_networks": ["Visa", "Mastercard"],
+                    "minimum_amount": 1,
+                    "maximum_amount": 68607706,
+                    "recurring_enabled": true,
+                    "installment_payment_enabled": true
+                  }
+                ]
+              }
+            ]
+          }'
+        ```
+
+        Replace `<stripe-test-api-key>` with a key starting with `sk_test_` from your Stripe dashboard. To use a dummy processor instead, set `"connector_name": "fauxpay"` and omit the `api_key` field.
+      </Step>
+
+      <Step title="Create and confirm a payment">
+        With your merchant API key set, run **Payments - Create** to initiate a payment:
+
+        ```bash
+        curl --location 'http://localhost:8080/payments' \
+          --header 'Content-Type: application/json' \
+          --header 'Accept: application/json' \
+          --header 'api-key: <merchant-api-key>' \
+          --data '{
+            "amount": 1000,
+            "currency": "USD",
+            "confirm": true,
+            "capture_method": "automatic",
+            "payment_method": "card",
+            "payment_method_data": {
+              "card": {
+                "card_number": "4242424242424242",
+                "card_exp_month": "12",
+                "card_exp_year": "2026",
+                "card_holder_name": "John Doe",
+                "card_cvc": "123"
+              }
+            },
+            "return_url": "https://example.com/payment-return"
+          }'
+        ```
+
+        A successful response returns `"status": "succeeded"` along with the `payment_id`.
+      </Step>
+    </Steps>
+
+    Explore the remaining folders in the [Postman collection](https://www.postman.com/hyperswitch/workspace/hyperswitch-development/collection/25176162-630b5353-7002-44d1-8ba1-ead6c230f2e3) to test refunds, disputes, payouts, and more.
+  </Tab>
+
+  <Tab title="API directly">
+    Use the Hyperswitch REST API to build your integration from scratch. The core payment flow has two steps: create a payment intent, then confirm it with payment method details.
+
+    ## Authentication
+
+    All API requests require your merchant API key in the `api-key` header. Obtain it from **Developers → Keys** in the Control Center or via the API Key - Create endpoint.
+
+    ## Base URL
+
+    | Environment | Base URL |
+    |---|---|
+    | Local Docker | `http://localhost:8080` |
+    | Cloud Sandbox | `https://sandbox.hyperswitch.io` |
+
+    ## Step 1: Create a payment
+
+    Send a `POST /payments` request to create and confirm a payment in a single call by setting `"confirm": true`.
+
+    ```bash
+    curl --location 'http://localhost:8080/payments' \
+      --header 'Content-Type: application/json' \
+      --header 'Accept: application/json' \
+      --header 'api-key: <your-api-key>' \
+      --data '{
+        "amount": 1000,
+        "currency": "USD",
+        "confirm": true,
+        "capture_method": "automatic",
+        "payment_method": "card",
+        "payment_method_data": {
+          "card": {
+            "card_number": "4242424242424242",
+            "card_exp_month": "12",
+            "card_exp_year": "2026",
+            "card_holder_name": "John Doe",
+            "card_cvc": "123"
+          }
+        },
+        "return_url": "https://example.com/payment-return",
+        "description": "First test payment"
+      }'
+    ```
+
+    **Expected response:**
+
+    ```json
+    {
+      "payment_id": "pay_xxxxxxxxxxxxxxxxxxxxxx",
+      "merchant_id": "Test_merchant",
+      "status": "succeeded",
+      "amount": 1000,
+      "currency": "USD",
+      "description": "First test payment",
+      "capture_method": "automatic",
+      "payment_method": "card",
+      "payment_method_data": {
+        "card": {
+          "last4": "4242",
+          "card_type": "CREDIT",
+          "card_network": "Visa",
+          "card_exp_month": "12",
+          "card_exp_year": "2026"
+        }
+      },
+      "connector": "stripe",
+      "connector_transaction_id": "ch_xxxxxxxxxxxxxxxxxxxxxx",
+      "created": "2026-03-31T10:00:00.000Z"
+    }
+    ```
+
+    ## Step 2: Retrieve payment status (optional)
+
+    To retrieve the status of an existing payment:
+
+    ```bash
+    curl --location 'http://localhost:8080/payments/<payment_id>' \
+      --header 'Accept: application/json' \
+      --header 'api-key: <your-api-key>'
+    ```
+
+    ## Two-step: create then confirm separately
+
+    For integrations using the Hyperswitch Web SDK (where the client confirms the payment), split the flow into two calls.
+
+    **Create a payment intent (server-side):**
+
+    ```bash
+    curl --location 'http://localhost:8080/payments' \
+      --header 'Content-Type: application/json' \
+      --header 'Accept: application/json' \
+      --header 'api-key: <your-api-key>' \
+      --data '{
+        "amount": 1000,
+        "currency": "USD",
+        "confirm": false,
+        "capture_method": "automatic",
+        "return_url": "https://example.com/payment-return"
+      }'
+    ```
+
+    The response includes a `client_secret` field. Pass this value to the Hyperswitch Web SDK on the client side to render the payment form and confirm the payment.
+
+    **Confirm the payment (client-side via SDK or server-side):**
+
+    ```bash
+    curl --location 'http://localhost:8080/payments/<payment_id>/confirm' \
+      --header 'Content-Type: application/json' \
+      --header 'Accept: application/json' \
+      --header 'api-key: <your-api-key>' \
+      --data '{
+        "payment_method": "card",
+        "payment_method_data": {
+          "card": {
+            "card_number": "4242424242424242",
+            "card_exp_month": "12",
+            "card_exp_year": "2026",
+            "card_holder_name": "John Doe",
+            "card_cvc": "123"
+          }
+        }
+      }'
+    ```
+
+    ## Test card numbers
+
+    Use these test cards with any sandbox processor:
+
+    | Card number | Network | Result |
+    |---|---|---|
+    | `4242 4242 4242 4242` | Visa | Succeeds |
+    | `5555 5555 5555 4444` | Mastercard | Succeeds |
+    | `4000 0000 0000 9995` | Visa | Declined (insufficient funds) |
+    | `4000 0025 0000 3155` | Visa | Requires 3D Secure authentication |
+
+    Use any future expiry date and any 3-digit CVC with the cards above.
+
+    <Warning>
+      Never use real card numbers in a sandbox or test environment. The numbers above are standardized test values that do not represent real accounts.
+    </Warning>
+
+    ## Error handling
+
+    A failed payment returns an HTTP 4xx or 5xx response with an error code and message:
+
+    ```json
+    {
+      "error": {
+        "type": "invalid_request",
+        "message": "Payment method data is invalid",
+        "code": "IR_16"
+      }
+    }
+    ```
+
+    The full list of error codes is available in the [API Reference](https://api-reference.hyperswitch.io/essentials/error_codes).
+  </Tab>
+</Tabs>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="The payment playground is not loading at localhost:5252">
+    The Web SDK playground may not have started correctly. Check your terminal for errors from the Docker Compose setup. Restart the playground container with:
+
+    ```bash
+    docker compose restart hyperswitch-web
+    ```
+
+    Also verify that your publishable key is set correctly in the playground configuration.
+  </Accordion>
+
+  <Accordion title="The payment element is not rendering">
+    Check the browser console for errors. Common causes:
+    - The publishable key or API key is incorrect
+    - The `client_secret` passed to the SDK is invalid or expired
+    - `HyperLoader.js` is not reachable — open its URL directly in a browser tab to confirm it loads
+  </Accordion>
+
+  <Accordion title="Transactions are failing">
+    Confirm that:
+    - At least one connector is connected and active
+    - The connector's API credentials are correct
+    - Raw card processing (card data passthrough) is enabled in the processor's dashboard
+    - The card number and expiry are valid test values
+
+    See the full [error codes reference](https://api-reference.hyperswitch.io/essentials/error_codes) for specific failure reasons.
+  </Accordion>
+
+  <Accordion title="I see a 'Page Not Found' error after payment">
+    This is a demo playground issue, not a payment or SDK issue. Ensure the `return_url` in your payment request points to a valid URL in your application.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Connect a Connector" icon="plug" href="/connectors/activate-connector">
+    Connect a production payment processor and configure payment methods for live use.
+  </Card>
+  <Card title="Smart Routing" icon="route" href="/features/smart-routing">
+    Configure routing rules to optimize authorization rates and reduce processing costs.
+  </Card>
+  <Card title="Web SDK Integration" icon="code" href="/checkout/web-sdk">
+    Embed the Hyperswitch checkout experience directly into your application.
+  </Card>
+  <Card title="API Reference" icon="book" href="https://api-reference.hyperswitch.io/introduction">
+    Explore the full Hyperswitch REST API documentation.
+  </Card>
+</CardGroup>

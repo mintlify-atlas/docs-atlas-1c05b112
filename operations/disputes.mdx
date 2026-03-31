@@ -1,0 +1,148 @@
+---
+title: "Disputes & Chargebacks"
+description: "View and manage disputes across all your payment processors from one place. Understand the chargeback lifecycle, submit evidence to challenge disputes, accept disputes, and track resolution status."
+---
+
+A dispute occurs when a customer contacts their card issuer, bank, or wallet provider to reverse a transaction. When the processor debits the merchant's account as part of that reversal, it becomes a **chargeback**. Hyperswitch uses the terms *dispute* and *chargeback* interchangeably for card payments.
+
+Hyperswitch unifies dispute notifications from all your connected processors so you can track, accept, and challenge disputes — including evidence uploads — from a single dashboard without logging in to each processor separately.
+
+## The dispute lifecycle
+
+Disputes on Hyperswitch move through up to three stages. Not every dispute passes through all stages.
+
+### Stage 1: Pre-dispute
+
+Some issuers begin an investigation before formally creating a dispute. Visa and Mastercard do not use this stage, so most disputes will skip it entirely.
+
+| Status | What it means |
+|--------|--------------|
+| `Opened` | An investigation has been opened. A dispute record is created on Hyperswitch. |
+| `Challenged` | You have submitted evidence to support the original transaction during the investigation. |
+| `Expired` | You did not respond within the required window, or the investigation was closed. |
+
+### Stage 2: Dispute
+
+This is the primary stage for most disputes. The processor has typically already debited your account at this point.
+
+| Status | What it means |
+|--------|--------------|
+| `Opened` | A dispute is open and your processor has debited your account. |
+| `Challenged` | You have uploaded evidence to support your case. |
+| `Expired` | You did not respond within the issuer's deadline. |
+| `Cancelled` | The customer withdrew their challenge. |
+| `Accepted` | You accepted the dispute as valid. |
+| `Won` | Your evidence was accepted. The funds are returned to your account (chargeback reversal). |
+| `Lost` | Your evidence was not accepted. The chargeback stands. |
+
+### Stage 3: Pre-arbitration
+
+If you won a dispute but the issuer still considers the evidence insufficient, they may escalate to pre-arbitration.
+
+| Status | What it means |
+|--------|--------------|
+| `Opened` | The issuer has opened a review appeal after deeming your original evidence unsatisfactory. |
+| `Won` | You prevailed in the pre-arbitration appeal. |
+| `Lost` | You lost the appeal. This is sometimes called a *second chargeback*. |
+
+## Viewing disputes in the Control Center
+
+<Steps>
+  <Step title="Navigate to disputes">
+    In the Control Center, go to **Operations → Disputes**. You will see a list of all disputes across all your connected processors.
+  </Step>
+  <Step title="Filter the list">
+    Filter disputes by status, dispute stage, processor, date range, or payment amount to narrow down the view.
+  </Step>
+  <Step title="Open a dispute">
+    Click any row to open the dispute detail view. You will see the payment details, dispute reason, the processor's deadline for responding, and the current status.
+  </Step>
+  <Step title="Generate a dispute report">
+    Click **Generate Reports** from the disputes list to download a CSV report of all disputes matching your current filters.
+  </Step>
+</Steps>
+
+## Responding to a dispute
+
+You have two options when a dispute is opened: challenge it with evidence, or accept it.
+
+### Challenging a dispute (submitting evidence)
+
+<Steps>
+  <Step title="Open the dispute">
+    From **Operations → Disputes**, click the dispute you want to challenge.
+  </Step>
+  <Step title="Review the dispute reason">
+    The dispute detail view shows the reason code provided by the issuer (for example, *item not received*, *unauthorized transaction*, or *credit not processed*). Gather evidence relevant to the reason code.
+  </Step>
+  <Step title="Upload evidence">
+    Click **Counter Dispute** and upload your supporting documents. Typical evidence includes:
+    - Proof of delivery or shipment tracking
+    - Signed receipts or order confirmations
+    - Customer communications (emails, chat logs)
+    - Service terms or refund policies accepted by the customer
+    - Screenshots of successful 3DS authentication
+  </Step>
+  <Step title="Submit the challenge">
+    After uploading all evidence, submit the challenge. The dispute status moves to `Challenged`. Hyperswitch forwards your evidence to the processor according to their submission requirements.
+  </Step>
+</Steps>
+
+<Warning>
+  Each dispute has a response deadline set by the issuer. If you do not respond before the deadline, the dispute status transitions to `Expired` and the chargeback is finalized against you. Check the deadline date on the dispute detail page before acting.
+</Warning>
+
+### Accepting a dispute
+
+If you determine that a dispute is legitimate or not worth challenging, you can accept it directly from the dispute detail view. The dispute status moves to `Accepted` and the chargeback amount remains debited from your account.
+
+<Note>
+  Accepting a dispute promptly can prevent additional fees that some processors charge for prolonged dispute handling.
+</Note>
+
+## Tracking resolution
+
+After you submit evidence or accept a dispute, Hyperswitch continuously syncs the status from your processor. You do not need to check individual processor dashboards — the updated status is reflected in **Operations → Disputes** as soon as Hyperswitch receives the processor's response.
+
+Subscribe to dispute webhook events to receive real-time notifications in your own systems:
+
+```json dispute.won webhook payload (example)
+{
+  "event_type": "dispute.won",
+  "dispute_id": "dp_01HXYZ",
+  "payment_id": "pay_01HABC",
+  "amount": 4999,
+  "currency": "USD",
+  "connector": "stripe",
+  "dispute_stage": "dispute",
+  "dispute_status": "won",
+  "created_at": "2024-11-15T09:32:00Z"
+}
+```
+
+## Reducing chargebacks
+
+<AccordionGroup>
+  <Accordion title="Provide clear product and shipping information">
+    Ensure your product descriptions, delivery timelines, and return policies are clearly communicated before and after purchase. Disputes labeled *item not as described* or *item not received* are often preventable with better customer communication.
+  </Accordion>
+  <Accordion title="Send order confirmation and delivery notifications">
+    Automated emails with order details, tracking numbers, and delivery confirmations reduce customer uncertainty and the likelihood that customers will resort to chargebacks when confused about a charge.
+  </Accordion>
+  <Accordion title="Make your refund process accessible">
+    Customers who can easily reach your support team and receive timely refunds are far less likely to initiate chargebacks. A clear, visible refund policy reduces disputes filed as *unauthorized transaction* when the customer simply could not reach you.
+  </Accordion>
+  <Accordion title="Use 3DS authentication for high-risk transactions">
+    3DS authentication transfers liability for unauthorized transaction chargebacks from you to the card issuer. Enable 3DS on your Hyperswitch profile for transactions in higher-risk segments.
+  </Accordion>
+  <Accordion title="Recognize your charge descriptor">
+    Many chargebacks happen because the customer does not recognize the charge on their card statement. Make sure your billing descriptor (the name shown on customer statements) clearly reflects your brand name, not a legal entity name the customer has never heard of.
+  </Accordion>
+  <Accordion title="Monitor dispute rate by processor">
+    Use Hyperswitch analytics to track your chargeback rate by processor, payment method, and geography. A spike in disputes for a specific processor or payment method often indicates a fraud pattern or misconfiguration that can be addressed before it worsens.
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  Card networks (Visa, Mastercard) set thresholds for acceptable chargeback rates — typically around 1%. Exceeding these thresholds can result in fines or loss of card acceptance. Monitor your dispute rate in the Hyperswitch analytics dashboard regularly.
+</Tip>

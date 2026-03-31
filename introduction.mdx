@@ -1,0 +1,79 @@
+---
+title: "Welcome to Hyperswitch"
+description: "An open-source, composable payment orchestration platform that lets you route, optimize, and manage payments across 100+ processors from a single integration."
+---
+
+Hyperswitch gives you full control over your payments infrastructure without the complexity of building from scratch. Connect once, route intelligently, and switch processors without rewriting your integration.
+
+<CardGroup cols={2}>
+  <Card title="Cloud Sandbox" icon="cloud" href="/quickstart/cloud-sandbox">
+    Get a ready-to-use test environment in minutes. No setup required — just log in and run your first transaction.
+  </Card>
+  <Card title="Local Setup" icon="docker" href="/quickstart/local-docker">
+    Run Hyperswitch locally with Docker for full control and flexibility in development.
+  </Card>
+  <Card title="Your First Payment" icon="credit-card" href="/quickstart/first-payment">
+    Send a test transaction and see Hyperswitch in action end-to-end.
+  </Card>
+  <Card title="API Reference" icon="code" href="https://api-reference.hyperswitch.io/introduction">
+    Explore the full Hyperswitch REST API to build custom integrations.
+  </Card>
+</CardGroup>
+
+## What you can build
+
+<CardGroup cols={2}>
+  <Card title="Smart Payment Routing" icon="route" href="/features/smart-routing">
+    Route transactions across processors based on success rate, cost, geography, or custom rules.
+  </Card>
+  <Card title="Card Vault & Tokenization" icon="vault" href="/features/vault-tokenization">
+    Securely store and reuse payment credentials across processors with PCI-compliant tokenization.
+  </Card>
+  <Card title="3DS Authentication" icon="shield-check" href="/features/3ds-authentication">
+    Apply 3D Secure selectively using the decision manager to balance fraud prevention and conversion.
+  </Card>
+  <Card title="Smart Retries" icon="rotate" href="/features/smart-retries">
+    Recover failed payments automatically with ML-driven retry strategies.
+  </Card>
+  <Card title="Payouts" icon="money-bill-transfer" href="/features/payouts">
+    Disburse funds to vendors, sellers, or partners with flexible payout routing.
+  </Card>
+  <Card title="Checkout SDKs" icon="mobile" href="/checkout/web-sdk">
+    Embed customizable checkout experiences on Web, iOS, Android, and React Native.
+  </Card>
+</CardGroup>
+
+## Get started in 3 steps
+
+<Steps>
+  <Step title="Set up your environment">
+    Choose the path that fits your needs: [Cloud Sandbox](/quickstart/cloud-sandbox) for instant access, [Docker](/quickstart/local-docker) for local development, or [AWS/Kubernetes](/deployment/overview) for production deployment.
+  </Step>
+  <Step title="Connect a payment processor">
+    Activate a connector in the Control Center or via API. Hyperswitch supports 100+ processors including Stripe, Adyen, Braintree, PayPal, and more. See the [Connectors guide](/connectors/activate-connector).
+  </Step>
+  <Step title="Make your first payment">
+    Use the SDK, Postman collection, or API directly to run a test transaction. Follow the [First Payment guide](/quickstart/first-payment) to see the complete flow.
+  </Step>
+</Steps>
+
+<Note>
+  Hyperswitch is fully open-source under the Apache 2.0 license. You can self-host on AWS, GCP, Azure, or any Kubernetes cluster, or use the managed cloud offering at [app.hyperswitch.io](https://app.hyperswitch.io).
+</Note>
+
+## Developer resources
+
+<CardGroup cols={2}>
+  <Card title="Prism SDK" icon="layer-group" href="/prism/overview">
+    A stateless, unified connector library for embedding payment processor integrations directly into your application in Node.js, Python, Java, or PHP.
+  </Card>
+  <Card title="Connector Service" icon="plug" href="/connectors/overview">
+    Explore 100+ supported payment processors and their capabilities.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/resources/webhooks">
+    Receive real-time notifications for payment events, refunds, disputes, and more.
+  </Card>
+  <Card title="FAQ" icon="circle-question" href="/resources/faq">
+    Answers to common questions about payment orchestration, setup, and going live.
+  </Card>
+</CardGroup>

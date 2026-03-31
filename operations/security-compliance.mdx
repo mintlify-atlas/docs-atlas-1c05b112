@@ -1,0 +1,236 @@
+---
+title: "Security & Compliance"
+description: "Understand how Hyperswitch handles PCI DSS compliance, data encryption, tokenization, key management, GDPR, and identity and access management — and what responsibilities remain with you."
+---
+
+Hyperswitch is designed so that the most complex compliance and security responsibilities are handled by the platform, not by your engineering team. This page explains exactly what Hyperswitch covers, what you still need to manage, and how the underlying security architecture protects your data.
+
+<CardGroup cols={2}>
+  <Card title="PCI DSS compliance" icon="credit-card">
+    Hyperswitch Cloud is a PCI DSS v4.0 Level 1 certified service provider, the highest level of certification available.
+  </Card>
+  <Card title="Data security" icon="shield-check">
+    Multi-layer encryption protects card data, API credentials, and PII during transmission and at rest.
+  </Card>
+  <Card title="GDPR compliance" icon="compact-disc">
+    Hyperswitch acts as a data processor under GDPR with a full Data Protection Agreement, deletion API, and dedicated DPO.
+  </Card>
+  <Card title="Identity and access management" icon="id-card-clip">
+    Role-based access control, MFA, and the principle of least privilege govern access at every level.
+  </Card>
+</CardGroup>
+
+## PCI DSS compliance
+
+### What Hyperswitch handles
+
+**Hyperswitch Cloud is validated as a PCI DSS v4.0 Level 1 Service Provider** — the highest level of PCI certification for service providers. Achieving and maintaining this certification requires:
+
+- Annual PCI DSS audits conducted by an independent Qualified Security Assessor (QSA).
+- Quarterly vulnerability scans by a PCI-approved scanning vendor (ASV).
+- Continuous maintenance of the 300+ controls specified in PCI DSS v4.0.
+
+By using Hyperswitch as your payment infrastructure, you benefit from this certification without needing to achieve Level 1 compliance yourself for the components Hyperswitch manages.
+
+**Tokenization and card vaulting** are handled automatically. When a customer saves a card, Hyperswitch stores the card details in its PCI-certified Card Vault and returns a token to your system. You never need to store raw card numbers.
+
+### What you manage
+
+Your own PCI scope depends on how you integrate with Hyperswitch:
+
+- If you use the **Hyperswitch SDK** (Unified Checkout), card data is collected directly by the SDK and never passes through your servers. This minimizes your PCI scope to SAQ A in most cases.
+- If you pass card data through your own server to the Hyperswitch API, your server is in scope for PCI and you need to document and maintain appropriate controls.
+
+<Note>
+  The exact SAQ or ROC level your business must complete depends on the number of card transactions you process annually. See the table below.
+</Note>
+
+### PCI compliance audit levels
+
+| Level | Transaction volume | Audit method |
+|-------|-------------------|--------------|
+| Level 1 | More than 6 million transactions/year | Report on Compliance (ROC) by a third-party QSA |
+| Level 2 | 1–6 million transactions/year | Self-Assessment Questionnaire (SAQ) |
+| Level 3 | 20,000–1 million e-commerce transactions/year | Self-Assessment Questionnaire (SAQ) |
+| Level 4 | Fewer than 20,000 e-commerce transactions/year | Self-Assessment Questionnaire (SAQ) |
+
+Sources: Mastercard, Visa, and PCI SSC guidelines.
+
+### Enabling raw card acceptance with processors
+
+Some processors disable raw card input by default. To process card numbers through Hyperswitch with those processors:
+
+<Steps>
+  <Step title="Obtain the Hyperswitch PCI AOC">
+    A redacted version of Hyperswitch's PCI DSS Attestation of Compliance (AOC) is available under NDA. Download it from the **Compliance** section of the Control Center, or email **hyperswitch@juspay.in**.
+  </Step>
+  <Step title="Share the AOC with your processor">
+    Send the AOC to your processor's support team and request that raw card processing be enabled for your merchant account. For Stripe, note that raw card acceptance can no longer be enabled via the Stripe Merchant Dashboard and must be done through Stripe support with the AOC.
+  </Step>
+</Steps>
+
+## Data security
+
+### Card data handling
+
+Card data follows a multi-layer encryption path from collection to storage:
+
+<Steps>
+  <Step title="Collection via SDK">
+    Card information is collected by the Hyperswitch SDK and transmitted to the Hyperswitch backend over TLS/SSL. Card data never touches your application servers when using the SDK.
+  </Step>
+  <Step title="Transmission to the Card Vault">
+    The Hyperswitch application server signs the card details using its private key (ensuring integrity) and encrypts them with the Card Vault's public key (ensuring confidentiality) before sending them to the vault.
+  </Step>
+  <Step title="Storage in the Card Vault">
+    The Card Vault validates the signature, decrypts the data, re-encrypts it using AES, and stores it in an encrypted database. The database itself is also encrypted at rest, providing an additional layer of protection.
+  </Step>
+  <Step title="Use in analytics">
+    Only partially masked card details (first 4 and last 4 digits) are sent to the Control Center for analytics and operations. Full card numbers are never exposed outside the vault.
+  </Step>
+</Steps>
+
+### Encryption overview
+
+| Layer | Mechanism |
+|-------|-----------|
+| Data in transit (SDK → server) | TLS/SSL end-to-end encryption |
+| Data in transit (server → vault) | Asymmetric RSA signing + public key encryption |
+| Data at rest in vault | AES encryption + database-level encryption |
+| Sensitive values in logs | Masked at source — only data type is logged, never the value |
+
+### Key management
+
+Hyperswitch uses **AWS Key Management Service (KMS)** to manage sensitive cryptographic keys:
+
+- Database passwords and RSA certificates are encrypted with KMS at startup.
+- Encrypted keys are stored in environment variables or configuration files — not in application code.
+
+For merchants requiring the highest level of isolation, Hyperswitch can provision a unique **Data Encryption Key (DEK)** per merchant account. Each DEK is stored encrypted in a secrets manager (such as AWS KMS), meaning:
+
+- Connector API credentials are encrypted with your merchant-specific DEK.
+- Customer PII (names, email addresses) is encrypted with your merchant-specific DEK.
+- Data for one merchant cannot be decrypted using another merchant's key.
+
+<Note>
+  The Key Manager Service providing per-merchant DEKs is required for PCI SSS certification but is optional for PCI DSS certification. For most merchants on Hyperswitch Cloud, the standard KMS configuration is sufficient.
+</Note>
+
+### Encryption at rest and in transit (self-hosted)
+
+If you are running a self-hosted Hyperswitch deployment, you are responsible for enforcing:
+
+- **Encryption at rest** on all database instances, backups, snapshots, and object storage containing transactional data.
+- **TLS 1.2 or higher** for all data in transit, including internal service-to-service communication.
+- **Card Vault isolation** — the Card Vault must run in a separate compute environment with its own storage volumes and independent key management.
+
+## GDPR compliance
+
+Under the GDPR, Hyperswitch acts as a **Data Processor** on your behalf (you are the Data Controller). Hyperswitch's responsibilities and practices as a data processor include:
+
+### Data protection principles
+
+| Principle | How Hyperswitch addresses it |
+|-----------|------------------------------|
+| Lawfulness, fairness, transparency | Data is processed on a valid legal basis; processing scope is communicated via the public Privacy Notice |
+| Purpose limitation | Data is processed only for defined, essential purposes; reviewed periodically to prevent function creep |
+| Data minimisation | Only the minimum personal data required to deliver the service is collected and processed |
+| Accuracy | Access controls, encrypted communication channels, and audit processes maintain data accuracy |
+| Storage limitation | Retention and deletion requirements are captured per merchant in the Data Protection Agreement |
+| Security | PCI DSS 4.0, ISO 27001:2022, SOC 2 Type II certified; encryption at rest and in transit enforced |
+
+### Your rights as a data controller
+
+- **Data subject requests**: Hyperswitch provides Data Compliance APIs so you can respond to your customers' GDPR rights requests (access, rectification, erasure) programmatically.
+- **Right to erasure**: Use the Deletion API to permanently delete customer PII from Hyperswitch's systems.
+- **Data Protection Agreement**: Hyperswitch's Master Services Agreement includes a DPA specifically addressing GDPR obligations in the context of payment processing.
+
+### Certifications and standards
+
+<CardGroup cols={2}>
+  <Card title="ISO/IEC 27001:2022" icon="certificate">
+    International standard for information security management systems (ISMS). Covers people, processes, and technology controls.
+  </Card>
+  <Card title="SOC 2 Type I and II" icon="certificate">
+    Type II examines the operational effectiveness of security controls over a period of 3–12 months.
+  </Card>
+  <Card title="PCI DSS v4.0" icon="certificate">
+    Level 1 Service Provider certification for storing, processing, and transmitting cardholder data.
+  </Card>
+  <Card title="GDPR Data Processor" icon="certificate">
+    Full DPA with merchants; dedicated Data Protection Officer and Privacy team at Juspay.
+  </Card>
+</CardGroup>
+
+### Sub-processors
+
+| Sub-processor | Purpose | Hosted region |
+|---------------|---------|---------------|
+| AWS | Cloud processing of user data and merchant data | Global (US), EU Data Residency server (EU) |
+| Slack | Merchant communication | US |
+| Google Workspace | Merchant communication and documentation | US |
+
+Data infrastructure, monitoring, and observability are operated using self-deployed open-source tools (ClickHouse, Grafana, Sentry), which reduces the number of third parties that your data is shared with.
+
+## Identity and access management
+
+### Authentication for Hyperswitch APIs
+
+<AccordionGroup>
+  <Accordion title="Merchant authentication">
+    All Hyperswitch API calls authenticate using the merchant's `api-key` passed in the request header. Each merchant account has its own API key, scoped to the resources within that merchant account. API keys are created and rotated from the Control Center under **Developers → Keys**.
+  </Accordion>
+  <Accordion title="Admin service authentication">
+    Administrative backend services require multi-layered authentication restricted to specific Hyperswitch engineering personnel. This is separate from merchant-facing API key authentication.
+  </Accordion>
+  <Accordion title="Card Vault authentication">
+    The Card Vault uses a distributed key custodian model. Multiple designated key custodians must collaborate to initiate the vault. No single individual can independently access or alter vault data.
+  </Accordion>
+</AccordionGroup>
+
+### Role-based access control
+
+The Control Center enforces RBAC across all three account levels (Organization, Merchant, Profile). Roles implement the principle of least privilege — each role is granted only the permissions required for its function.
+
+See the [account management](/operations/account-management) page for the full list of built-in roles and their permission sets.
+
+Key access control principles applied by Hyperswitch:
+
+- **Principle of least privilege**: Users can only access the modules and actions their role requires.
+- **Top-down data visibility**: Higher levels (organization) can access data from levels below them (merchant, profile). The reverse is not true — a profile operator cannot view data from another profile.
+- **Distributed access model**: No individual holds complete administrative control over all operations.
+
+### Multi-Factor Authentication (MFA)
+
+Hyperswitch enforces MFA in combination with network and device allowlisting for user access to infrastructure-level resources. For the Control Center, MFA configuration follows your organization's identity provider settings.
+
+### Managing API keys
+
+<Steps>
+  <Step title="Create an API key">
+    In the Control Center, navigate to **Developers → Keys** and click **Create API key**. Enter a description and expiry date, then click **Next**.
+  </Step>
+  <Step title="Copy and store the key securely">
+    The full API key is displayed once. Copy it and store it in your secrets manager immediately. It cannot be retrieved again through the dashboard.
+  </Step>
+  <Step title="Rotate a compromised key">
+    If an API key is exposed, navigate to **Developers → Keys**, find the key, and click **Revoke**. Create a new key and update your application configuration. The revoked key is immediately invalidated.
+  </Step>
+</Steps>
+
+<Warning>
+  API keys grant full access to all payment operations for the associated merchant account. Never commit API keys to source control, include them in client-side code, or share them in plaintext. Always store keys in a secrets manager such as AWS Secrets Manager, HashiCorp Vault, or your CI/CD platform's secret store.
+</Warning>
+
+### Security monitoring
+
+For production deployments, Hyperswitch recommends integrating with a SIEM or centralized logging platform to:
+
+- Aggregate application, system, and infrastructure logs.
+- Configure real-time alerts for unauthorized access attempts, repeated authentication failures, privilege escalation, and unexpected data access patterns.
+- Maintain tamper-evident, write-once audit logs for forensic purposes.
+- Enable File Integrity Monitoring (FIM) on critical system binaries and configuration files.
+
+<Tip>
+  PCI DSS requires annual penetration testing for all systems in the Cardholder Data Environment (CDE). Automating weekly vulnerability scans using tools such as Qualys or Nessus helps maintain continuous coverage between annual assessments.
+</Tip>

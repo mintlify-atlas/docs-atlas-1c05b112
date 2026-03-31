@@ -1,0 +1,177 @@
+---
+title: "Smart Retries & Revenue Recovery"
+description: "Automatically recover failed payments using ML-driven retry logic, 3DS step-up retries, and error-code-aware processor selection across 100+ processors."
+---
+
+Smart Retries is Hyperswitch's automatic payment recovery system. When a payment fails, the retry engine classifies the error, determines whether a retry is viable, selects the optimal retry strategy, and re-attempts the payment — all without requiring the customer to re-enter payment details or take any action.
+
+## How it works
+
+The retry engine intercepts every failed payment and performs a **Global Status Mapping (GSM)** lookup. The GSM database contains error codes and messages for 100+ processors, acquirers, and issuers — ranging from 400 to 1,000+ codes per processor — and classifies each error as either retriable or non-retriable.
+
+```
+Payment attempt fails
+         │
+         ▼
+┌─────────────────────┐
+│   GSM lookup        │  Map error code → retriable / non-retriable
+└────────┬────────────┘
+         │ retriable
+         ▼
+┌─────────────────────┐
+│  Retry strategy     │  Which type of retry applies?
+│  selection          │
+└────────┬────────────┘
+         │
+    ┌────┴──────────────────────────────────────────┐
+    │                                               │
+    ▼                                               ▼
+step_up_possible?                        clear_pan_possible?
+    │                                               │
+    ▼                                               ▼
+Attempt 3DS step-up               Retry with clear PAN instead of
+(frictionless or challenge)       network token
+    │                                               │
+    └──────────────┬────────────────────────────────┘
+                   │
+                   ▼
+        alternate_network_possible?
+                   │
+                   ▼
+         Try different debit network
+                   │
+                   ▼
+        Cascading retry to alternate
+        processor (same or enhanced payload)
+                   │
+                   ▼
+        Retries / connectors exhausted?
+                   │
+          yes      │     no
+           ───────►│◄────────
+                   │
+            Terminal failure / Success
+```
+
+## Retry types
+
+<AccordionGroup>
+  <Accordion title="Cascading retry" icon="arrow-rotate-right">
+    Re-attempts the authorization on an alternate processor, optionally with an enhanced payload containing additional customer, device, or product fields that may improve approval odds.
+
+    **Triggered by errors such as:** `Refused`, `System malfunction`, `Processing temporarily unavailable`
+
+    The enhanced payload capability is especially useful when a payment fails with limited data fields and a different processor can benefit from richer context.
+  </Accordion>
+
+  <Accordion title="Step-up retry (3DS)" icon="shield-check">
+    Re-attempts the authorization with 3DS authentication applied, either as a frictionless flow or a full challenge flow. The step-up can target the same or a different processor.
+
+    **Triggered by errors such as:** `3D Secure required`, `Strong customer authentication required`, `Suspected Fraud`
+
+    Two common step-up sequences:
+
+    | Attempt | PSP | Flow | Outcome |
+    |---------|-----|------|---------|
+    | 1 | PSP1 | Non-3DS | Suspected fraud |
+    | 2 | PSP1 | Independent 3DS — frictionless | Generic decline |
+    | 3 | PSP2 | Original payload + authentication data | Success |
+
+    | Attempt | PSP | Flow | Outcome |
+    |---------|-----|------|---------|
+    | 1 | PSP1 | Non-3DS | Suspected fraud |
+    | 2 | PSP1 | Independent 3DS — challenge | Generic decline |
+    | 3 | PSP2 | Original payload + authentication data | Success |
+  </Accordion>
+
+  <Accordion title="Clear PAN retry" icon="credit-card">
+    When a payment is made using a network token and the processor rejects it (token not supported, token expired, invalid cryptogram), Hyperswitch retries using the clear PAN retrieved from the vault.
+
+    **Triggered by errors such as:** `Invalid cryptogram`, `Network token not supported`, `Payment token expired`
+
+    | Attempt | PSP | Flow | Outcome |
+    |---------|-----|------|---------|
+    | 1 | PSP1 | Network token PAN | Do not honor |
+    | 2 | PSP1 | Clear PAN | Generic decline |
+    | 3 | PSP2 | Clear PAN | Success |
+  </Accordion>
+
+  <Accordion title="Global network retry" icon="globe">
+    Re-attempts a debit transaction on an alternate debit network when the primary debit network rejects or cannot process the transaction.
+
+    **Triggered by errors such as:** `Transaction not permitted on this network`, `Invalid card for selected network`, `Function not supported`
+  </Accordion>
+</AccordionGroup>
+
+## Error code classification
+
+For every processor, all published and observed error codes are classified into two categories:
+
+- **Retriable** — errors where a retry has a reasonable chance of success (temporary outages, fraud score issues, authentication requirements).
+- **Non-retriable** — errors where retrying will not help (stolen card, invalid card number, do-not-honor with no remedy).
+
+The classification database is continuously updated as new error codes are observed. There is also a feedback loop that can promote codes from non-retriable to retriable when retry exploration shows success.
+
+Each retriable code is further mapped to the specific retry type it should trigger (cascading, step-up, clear-PAN, or network retry).
+
+## User consent-based retries
+
+Smart Retries operate silently in the background. Payment flows that require additional user authentication — Apple Pay, Google Pay, 3DS-initiated flows, bank transfers — cannot be silently retried because they require the customer to re-authenticate. In those cases, the retry engine does not trigger automatic retries.
+
+<Note>
+  The customer may receive multiple authorization attempt notifications from their card issuer during a retry sequence. This is expected behavior and does not indicate a double charge.
+</Note>
+
+## Revenue recovery for recurring payments
+
+For subscription businesses, Hyperswitch's Revenue Recovery module extends smart retries to scheduled recurring payments (MIT — merchant-initiated transactions).
+
+When a recurring payment fails, the engine analyzes 20+ transaction parameters — including decline code, issuer behavior, time of day, and payment history — to schedule the optimal retry time and route.
+
+**Key capabilities:**
+
+- Reduces time between retries to improve recovery speed.
+- Maps issuer-specific decline codes (insufficient funds, fraud blocks) to tailored retry strategies.
+- Integrates with subscription platforms (including Kill Bill) to record recovered payments and prevent subscription cancellation.
+
+**Configure Revenue Recovery via Control Center:**
+
+<Steps>
+  <Step title="Connect payment processors">
+    Provide credentials for your payment processors and configure Hyperswitch webhooks on each processor.
+  </Step>
+  <Step title="Connect your subscription platform">
+    Provide credentials for your subscription platform and configure Hyperswitch webhooks there as well.
+  </Step>
+  <Step title="Set the recovery plan">
+    Configure the retry budget (maximum retry attempts), the delay before the first retry, and any time-window restrictions.
+  </Step>
+</Steps>
+
+Once active, Revenue Recovery monitors all incoming webhooks. When a failed transaction is detected, it schedules retries automatically and writes results back to the subscription platform.
+
+## How to enable Smart Retries
+
+Smart Retries requires a one-time enablement by the Hyperswitch support team to ensure retry behavior is compatible with your reconciliation setup.
+
+<Steps>
+  <Step title="Set your processor fallback order">
+    In the Control Center, navigate to **Routing** → **Default Fallback** → **Manage** and set the priority order for your processors. The retry engine uses this order when selecting alternate processors.
+  </Step>
+  <Step title="Request enablement">
+    Email [hyperswitch@juspay.in](mailto:hyperswitch@juspay.in) with:
+
+    - Which retry flows to enable: Cascading, Step-Up, Clear PAN, Global Network
+    - Maximum number of retry attempts (N)
+  </Step>
+</Steps>
+
+<Warning>
+  Smart retry appends an attempt number to the `payment_id` passed to processors (e.g. `pay_abc_1`, `pay_abc_2`). If your reconciliation flow depends on the exact `payment_id` matching between Hyperswitch and your processor, confirm this is acceptable before enabling smart retries.
+</Warning>
+
+## Monitoring retries
+
+To verify a smart retry occurred for a specific payment, navigate to the payment in the Control Center using its `payment_id`. The transaction timeline lists all attempts under the same ID.
+
+Aggregate retry performance — including recovery rate and attempt distribution — is available in **Analytics** → **Smart Retries**.

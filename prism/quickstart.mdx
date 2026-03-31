@@ -1,0 +1,450 @@
+---
+title: "Quickstart"
+description: "Create an order, authorize a payment, capture funds, and process a refund — the complete payment lifecycle in one guide."
+---
+
+This guide walks through the four core steps of a payment lifecycle using Prism. By the end you will have a working integration that you can point at any of Prism's 100+ supported processors by changing one line.
+
+<Note>
+  This guide assumes you have already [installed Prism and configured a connector client](/prism/installation). The examples use Stripe, but the same code works for Adyen, Braintree, PayPal, or any other supported connector.
+</Note>
+
+<Steps>
+  <Step title="Configure the client">
+    Create a `PaymentClient` configured for your payment processor. See [Installation](/prism/installation) for the full setup with environment variables.
+
+    <Tabs>
+      <Tab title="Node.js">
+        ```javascript index.js
+        const { PaymentClient } = require('hyperswitch-prism');
+        const { ConnectorConfig, ConnectorSpecificConfig, SdkOptions, Environment } = require('hyperswitch-prism').types;
+
+        const stripeConfig = ConnectorConfig.create({
+          options: SdkOptions.create({ environment: Environment.SANDBOX }),
+        });
+        stripeConfig.connectorConfig = ConnectorSpecificConfig.create({
+          stripe: { apiKey: { value: process.env.STRIPE_API_KEY } }
+        });
+        const client = new PaymentClient(stripeConfig);
+        ```
+      </Tab>
+      <Tab title="Python">
+        ```python main.py
+        import os
+        from hyperswitch_prism import PaymentClient
+        from hyperswitch_prism.generated import sdk_config_pb2
+
+        stripe_config = sdk_config_pb2.ConnectorConfig(
+          options=sdk_config_pb2.SdkOptions(environment=sdk_config_pb2.Environment.SANDBOX),
+        )
+        stripe_config.connector_config.stripe.api_key.value = os.environ["STRIPE_API_KEY"]
+        client = PaymentClient(stripe_config)
+        ```
+      </Tab>
+      <Tab title="Java">
+        ```java Main.java
+        import com.juspay.hyperswitch.prism.PaymentClient;
+        import com.juspay.hyperswitch.prism.config.*;
+
+        ConnectorConfig stripeConfig = ConnectorConfig.builder()
+          .options(SdkOptions.builder().environment(Environment.SANDBOX).build())
+          .connectorSpecificConfig(ConnectorSpecificConfig.builder()
+            .stripe(StripeConfig.builder()
+              .apiKey(SecretString.of(System.getenv("STRIPE_API_KEY")))
+              .build())
+            .build())
+          .build();
+        PaymentClient client = new PaymentClient(stripeConfig);
+        ```
+      </Tab>
+      <Tab title="PHP">
+        ```php index.php
+        <?php
+        require_once 'vendor/autoload.php';
+
+        use HyperswitchPrism\PaymentClient;
+        use HyperswitchPrism\Config\ConnectorConfig;
+        use HyperswitchPrism\Config\Environment;
+
+        $config = ConnectorConfig::create([
+          'environment' => Environment::SANDBOX,
+          'stripe' => ['api_key' => $_ENV['STRIPE_API_KEY']]
+        ]);
+        $client = new PaymentClient($config);
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Create a payment order">
+    `createOrder` initializes the payment at the processor before the customer enters card details. It returns a `connectorOrderId` and, for processors like Stripe, a `sessionToken` (client secret) you pass to the frontend SDK.
+
+    <Tabs>
+      <Tab title="Node.js">
+        ```javascript
+        const order = await client.createOrder({
+          merchantOrderId: 'order-123',
+          amount: {
+            minorAmount: 1000,  // $10.00
+            currency: 'USD'
+          },
+          orderType: 'PAYMENT',
+          description: 'Test order'
+        });
+
+        console.log('Order ID:', order.connectorOrderId);
+        console.log('Client Secret:', order.sessionToken?.clientSecret);
+        // Order ID: pi_3Oxxx...
+        // Client Secret: pi_3Oxxx..._secret_xxx
+        ```
+      </Tab>
+      <Tab title="Python">
+        ```python
+        order = client.create_order(
+          sdk_config_pb2.CreateOrderRequest(
+            merchant_order_id='order-123',
+            amount=sdk_config_pb2.Amount(minor_amount=1000, currency='USD'),
+            order_type='PAYMENT',
+            description='Test order'
+          )
+        )
+
+        print(f"Order ID: {order.connector_order_id}")
+        print(f"Client Secret: {order.session_token.client_secret}")
+        ```
+      </Tab>
+      <Tab title="Java">
+        ```java
+        CreateOrderResponse order = client.createOrder(
+          CreateOrderRequest.builder()
+            .merchantOrderId("order-123")
+            .amount(Amount.of(1000, Currency.USD))
+            .orderType("PAYMENT")
+            .description("Test order")
+            .build()
+        );
+
+        System.out.println("Order ID: " + order.getConnectorOrderId());
+        System.out.println("Client Secret: " + order.getSessionToken().getClientSecret());
+        ```
+      </Tab>
+      <Tab title="PHP">
+        ```php
+        $order = $client->createOrder([
+          'merchant_order_id' => 'order-123',
+          'amount' => ['minor_amount' => 1000, 'currency' => 'USD'],
+          'order_type' => 'PAYMENT',
+          'description' => 'Test order'
+        ]);
+
+        echo "Order ID: " . $order->getConnectorOrderId() . "\n";
+        echo "Client Secret: " . $order->getSessionToken()?->getClientSecret() . "\n";
+        ```
+      </Tab>
+    </Tabs>
+
+    The order response looks like this:
+
+    ```json
+    {
+      "connectorOrderId": "pi_3Oxxx...",
+      "status": "STARTED",
+      "merchantOrderId": "order-123",
+      "sessionToken": {
+        "clientSecret": "pi_3Oxxx..._secret_xxx"
+      }
+    }
+    ```
+
+    Pass `sessionToken.clientSecret` to your frontend to initialize [Stripe Elements](https://stripe.com/docs/stripe-js) or [Adyen Drop-in](https://docs.adyen.com/online-payments/web-drop-in/). The customer enters their card details there, and you receive a `payment_method_id` to use in the next step.
+
+    <Tip>
+      If you are PCI compliant and collect raw card data directly, you can skip `createOrder` and pass card details straight to `authorize`.
+    </Tip>
+  </Step>
+
+  <Step title="Authorize the payment">
+    `authorize` reserves funds on the customer's payment method without transferring them. Pass the `payment_method_id` returned by the frontend SDK, or provide raw card details if you are PCI compliant.
+
+    <Tabs>
+      <Tab title="Node.js">
+        ```javascript
+        const { CaptureMethod } = require('hyperswitch-prism').types;
+
+        // Using payment_method_id from frontend (e.g., Stripe.js)
+        const auth = await client.authorize({
+          amount: { minorAmount: 1000, currency: 'USD' },
+          merchantOrderId: 'order-123',
+          paymentMethod: {
+            paymentMethodId: 'pm_1234abcd'  // from frontend SDK
+          },
+          captureMethod: CaptureMethod.MANUAL  // capture separately when order ships
+        });
+
+        console.log('Payment ID:', auth.paymentId);
+        console.log('Status:', auth.status);  // AUTHORIZED
+        ```
+      </Tab>
+      <Tab title="Python">
+        ```python
+        from connector_service import CaptureMethod
+
+        auth = client.payments.authorize(
+          amount={"minor_amount": 1000, "currency": "USD"},
+          merchant_order_id="order-123",
+          payment_method={
+            "payment_method_id": "pm_1234abcd"
+          },
+          capture_method=CaptureMethod.MANUAL
+        )
+
+        print(f"Payment ID: {auth.payment_id}, Status: {auth.status}")
+        ```
+      </Tab>
+      <Tab title="Java">
+        ```java
+        AuthorizeResponse auth = client.payments().authorize(
+          AuthorizeRequest.builder()
+            .amount(Amount.of(1000, Currency.USD))
+            .merchantOrderId("order-123")
+            .paymentMethod(PaymentMethod.byId("pm_1234abcd"))
+            .captureMethod(CaptureMethod.MANUAL)
+            .build()
+        );
+
+        System.out.println("Payment ID: " + auth.getPaymentId());
+        System.out.println("Status: " + auth.getStatus());  // AUTHORIZED
+        ```
+      </Tab>
+      <Tab title="PHP">
+        ```php
+        use ConnectorService\Enum\CaptureMethod;
+
+        $auth = $client->payments()->authorize([
+          'amount' => ['minor_amount' => 1000, 'currency' => 'USD'],
+          'merchant_order_id' => 'order-123',
+          'payment_method' => ['payment_method_id' => 'pm_1234abcd'],
+          'capture_method' => CaptureMethod::MANUAL
+        ]);
+
+        echo "Payment ID: " . $auth->getPaymentId() . "\n";
+        echo "Status: " . $auth->getStatus() . "\n";  // AUTHORIZED
+        ```
+      </Tab>
+    </Tabs>
+
+    Use `CaptureMethod.AUTOMATIC` to authorize and charge immediately (useful for digital goods). Use `CaptureMethod.MANUAL` when you want to capture later — for example, when the physical order ships.
+
+    **Authorizing with raw card details** (PCI compliant only):
+
+    ```javascript
+    const auth = await client.payments.authorize({
+      amount: { minorAmount: 1000, currency: 'USD' },
+      merchantOrderId: 'order-123',
+      paymentMethod: {
+        card: {
+          cardNumber: '4242424242424242',
+          expiryMonth: '12',
+          expiryYear: '2027',
+          cardHolderName: 'Jane Doe'
+        }
+      },
+      captureMethod: CaptureMethod.AUTOMATIC
+    });
+    ```
+  </Step>
+
+  <Step title="Capture the payment">
+    `capture` transfers the reserved funds from the customer to your merchant account. Call this when you are ready to charge — for example, when the order ships.
+
+    <Tabs>
+      <Tab title="Node.js">
+        ```javascript
+        const capture = await client.payments.capture({
+          paymentId: auth.paymentId,
+          amount: { minorAmount: 1000, currency: 'USD' }
+        });
+
+        console.log('Status:', capture.status);  // CAPTURED
+        ```
+      </Tab>
+      <Tab title="Python">
+        ```python
+        capture = client.payments.capture(
+          payment_id=auth.payment_id,
+          amount={"minor_amount": 1000, "currency": "USD"}
+        )
+        print(f"Captured: {capture.status}")
+        ```
+      </Tab>
+      <Tab title="Java">
+        ```java
+        CaptureResponse capture = client.payments().capture(
+          CaptureRequest.builder()
+            .paymentId(auth.getPaymentId())
+            .amount(Amount.of(1000, Currency.USD))
+            .build()
+        );
+        System.out.println("Captured: " + capture.getStatus());
+        ```
+      </Tab>
+      <Tab title="PHP">
+        ```php
+        $capture = $client->payments()->capture([
+          'payment_id' => $auth->getPaymentId(),
+          'amount' => ['minor_amount' => 1000, 'currency' => 'USD']
+        ]);
+        echo "Captured: " . $capture->getStatus() . "\n";
+        ```
+      </Tab>
+    </Tabs>
+
+    You can capture a partial amount. For multi-shipment orders, call `capture` multiple times with partial amounts against the same authorization.
+  </Step>
+
+  <Step title="Process a refund">
+    `refund` returns funds to the customer after capture and settlement. You can refund the full amount or a partial amount.
+
+    <Tabs>
+      <Tab title="Node.js">
+        ```javascript
+        // Full refund
+        const refund = await client.payments.refund({
+          paymentId: auth.paymentId,
+          amount: { minorAmount: 1000, currency: 'USD' },
+          reason: 'Customer return'
+        });
+        console.log('Refund ID:', refund.refundId);
+
+        // Partial refund ($5 of the original $10)
+        const partialRefund = await client.payments.refund({
+          paymentId: auth.paymentId,
+          amount: { minorAmount: 500, currency: 'USD' },
+          reason: 'Item damaged in shipping'
+        });
+        ```
+      </Tab>
+      <Tab title="Python">
+        ```python
+        refund = client.payments.refund(
+          payment_id=auth.payment_id,
+          amount={"minor_amount": 1000, "currency": "USD"},
+          reason="Customer return"
+        )
+        print(f"Refund ID: {refund.refund_id}")
+        ```
+      </Tab>
+      <Tab title="Java">
+        ```java
+        RefundResponse refund = client.payments().refund(
+          RefundRequest.builder()
+            .paymentId(auth.getPaymentId())
+            .amount(Amount.of(1000, Currency.USD))
+            .reason("Customer return")
+            .build()
+        );
+        System.out.println("Refund ID: " + refund.getRefundId());
+        ```
+      </Tab>
+      <Tab title="PHP">
+        ```php
+        $refund = $client->payments()->refund([
+          'payment_id' => $auth->getPaymentId(),
+          'amount' => ['minor_amount' => 1000, 'currency' => 'USD'],
+          'reason' => 'Customer return'
+        ]);
+        echo "Refund ID: " . $refund->getRefundId() . "\n";
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Switching from one processor to another
+
+Once your integration is in place, switching to a different processor is a single client config change. Every method call — `createOrder`, `authorize`, `capture`, `refund` — stays identical.
+
+```javascript
+// Routing rule: send EUR to Adyen, USD to Stripe
+const adyenConfig = ConnectorConfig.create({
+  options: SdkOptions.create({ environment: Environment.SANDBOX }),
+});
+adyenConfig.connectorConfig = ConnectorSpecificConfig.create({
+  adyen: {
+    apiKey: { value: process.env.ADYEN_API_KEY },
+    merchantAccount: process.env.ADYEN_MERCHANT_ACCOUNT
+  }
+});
+const adyenClient = new PaymentClient(adyenConfig);
+
+function getClient(currency) {
+  return currency === 'EUR' ? adyenClient : stripeClient;
+}
+
+// EUR goes to Adyen — no code changes to the createOrder call
+const eurOrder = await getClient('EUR').createOrder({
+  merchantOrderId: 'order-456',
+  amount: { minorAmount: 2500, currency: 'EUR' },
+  orderType: 'PAYMENT',
+  description: 'Test order'
+});
+
+// USD goes to Stripe — same call, different client
+const usdOrder = await getClient('USD').createOrder({
+  merchantOrderId: 'order-123',
+  amount: { minorAmount: 1000, currency: 'USD' },
+  orderType: 'PAYMENT',
+  description: 'Test order'
+});
+```
+
+No rewriting. No re-architecting. The unified schema handles all field transformations between the two processors internally.
+
+## Error handling
+
+All connectors surface errors using the same unified error codes. Write one error handler and it works across every processor.
+
+```javascript
+try {
+  const auth = await client.authorize({ /* ... */ });
+} catch (error) {
+  switch (error.code) {
+    case 'PAYMENT_DECLINED':
+      // Prompt user to try a different card
+      break;
+    case 'EXPIRED_CARD':
+      // Ask user to update card details
+      break;
+    case 'INSUFFICIENT_FUNDS':
+      // Suggest alternative payment method
+      break;
+    case 'NETWORK_TIMEOUT':
+      // Retry with exponential backoff
+      await retryWithBackoff(() => client.authorize(request));
+      break;
+    default:
+      console.error('Payment failed:', error.message, 'Request ID:', error.requestId);
+  }
+}
+```
+
+<Note>
+  `error.requestId` is included in all errors. Provide it to support when reporting issues for end-to-end tracing.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Incremental authorization" icon="plus" href="/prism/api-reference">
+    Increase a hold for hotel incidentals or restaurant tips without re-authorizing.
+  </Card>
+  <Card title="Recurring payments" icon="rotate" href="/prism/api-reference">
+    Set up mandates and charge stored payment methods for subscriptions.
+  </Card>
+  <Card title="Webhook handling" icon="webhook" href="/prism/api-reference">
+    Process asynchronous payment events from any processor with a single unified handler.
+  </Card>
+  <Card title="API reference" icon="book" href="/prism/api-reference">
+    Full parameter reference for all operations.
+  </Card>
+</CardGroup>

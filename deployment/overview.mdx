@@ -1,0 +1,112 @@
+---
+title: "Deployment Overview"
+description: "Choose how to deploy Hyperswitch — managed SaaS, self-hosted on AWS, or Kubernetes on any cloud."
+---
+
+Hyperswitch supports three deployment models. Each gives you a different balance of operational control, compliance responsibility, and setup effort. This page helps you understand what you get with each model and which one fits your needs.
+
+## Deployment models
+
+<CardGroup cols={3}>
+  <Card title="Cloud SaaS" icon="cloud" href="https://app.hyperswitch.io">
+    Fully managed by Juspay. Connect via hosted APIs and SDKs. PCI compliance handled by Juspay. 99.999% uptime SLA with up to 3000 TPS processing capacity.
+  </Card>
+  <Card title="Self-hosted on AWS" icon="aws" href="/deployment/aws">
+    Deploy the full Hyperswitch stack into your own AWS account using a CDK script or component-by-component. You own the infrastructure; Juspay provides enterprise support.
+  </Card>
+  <Card title="Self-hosted on Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+    Deploy on any Kubernetes cluster — GCP, Azure, or on-premises — using official Helm charts. Recommended for enterprise-grade, multi-region production deployments.
+  </Card>
+</CardGroup>
+
+### When to choose each model
+
+| | Cloud SaaS | Self-hosted (AWS / Kubernetes) |
+|---|---|---|
+| Infrastructure ownership | Juspay | You |
+| PCI compliance | Juspay | You (or Juspay tokenization service) |
+| Operational overhead | Minimal | High |
+| Customization | Limited | Full |
+| Scaling & reliability | Guaranteed SLAs | You manage |
+| Best for | Teams wanting zero ops overhead | Enterprises needing full control |
+
+<Note>
+  The self-deployment guides in this section are designed for enterprise-grade production use. If you want to experiment locally first, start with [Run Locally with Docker](/deployment/docker-local).
+</Note>
+
+---
+
+## Core components
+
+Every Hyperswitch deployment — regardless of model — consists of the same set of application components.
+
+<CardGroup cols={2}>
+  <Card title="App Server" icon="server">
+    The core payment processing engine. Handles authorization, capture, void, refund, 3DS, routing, retries, and chargeback flows. Composed of two sub-services: **hyperswitch-router** (request handling and routing) and **hyperswitch-scheduler** (periodic tasks such as card expiry notifications).
+  </Card>
+  <Card title="Web SDK (Hyperswitch Web)" icon="code">
+    A JavaScript SDK that renders a customizable, PCI-compliant checkout experience on Web, Android, and iOS. Integrates with the locker to display saved payment methods automatically.
+  </Card>
+  <Card title="Control Center" icon="gauge">
+    A no-code dashboard for configuring routing rules, managing connectors, triggering refunds, reviewing disputes, and viewing transaction analytics. Runs as a separate service.
+  </Card>
+  <Card title="Card Vault (Hyperswitch Locker)" icon="vault">
+    A PCI-compliant vault that tokenizes and stores card data so sensitive information never touches your application servers. Supports cross-processor tokenization and network tokens.
+  </Card>
+</CardGroup>
+
+### Optional components
+
+- **Hyperswitch Encryption Service** — lightweight key management and encryption/decryption service, required for PCI-SSS certification.
+- **Scheduler (Producer + Consumer)** — automates periodic deletion of card data and API key expiry notifications.
+- **Monitoring stack** — Promtail, Loki, OpenTelemetry Collector, Prometheus, and Grafana for logs and metrics.
+
+---
+
+## Architecture overview
+
+A typical production deployment includes the five core application components above alongside supporting infrastructure:
+
+| Layer | Components |
+|---|---|
+| Application | App Server (Router + Scheduler), Control Center, Web SDK, Card Vault |
+| Storage | PostgreSQL 14.x (primary datastore), Redis 7.x (cache and session) |
+| Networking | Load balancer, outgoing proxy, incoming proxy with WAF/rate-limiting |
+| Observability | Promtail → Loki, OpenTelemetry → Prometheus → Grafana |
+| Encryption (optional) | Encryption service for PCI-SSS certification |
+
+For enterprise production, the recommended approach is Kubernetes on a managed cloud (GCP, AWS, or Azure) with the Hyperswitch Helm chart. See [System requirements](/deployment/kubernetes#system-requirements) for hardware baselines.
+
+---
+
+## Deployment topology options
+
+For self-hosted deployments at scale, you have two topology options:
+
+<CardGroup cols={2}>
+  <Card title="Multi-region active-active" icon="arrows-split-up-and-left">
+    Both regions process live traffic simultaneously. A CDN distributes requests across regions. Near-zero downtime (RTO ≈ 30 seconds, RPO ≈ 30 seconds). Requires Redis-based cross-region replication and a transaction-affinity proxy.
+  </Card>
+  <Card title="Multi-region active-passive" icon="arrow-right-arrow-left">
+    One region handles all traffic; a standby region stays in sync via async database replication. Failover via DNS or load balancer switch. RTO &lt; 10 minutes, RPO ≈ 30 seconds. Lower complexity than active-active.
+  </Card>
+</CardGroup>
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Run locally with Docker" icon="docker" href="/deployment/docker-local">
+    Start the full stack on your machine in minutes for local development.
+  </Card>
+  <Card title="Deploy on AWS" icon="aws" href="/deployment/aws">
+    Launch the full Hyperswitch stack on AWS using the CDK script or component-by-component.
+  </Card>
+  <Card title="Deploy on Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+    Use Helm charts to deploy on GCP, Azure, or any Kubernetes cluster.
+  </Card>
+  <Card title="Going live" icon="rocket" href="/deployment/going-live">
+    Production readiness checklist for SaaS and self-hosted setups.
+  </Card>
+</CardGroup>

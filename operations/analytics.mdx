@@ -1,0 +1,190 @@
+---
+title: "Analytics & Operations"
+description: "Monitor payment conversion rates, analyze drop-off patterns, track retry performance, compare processors, filter transaction logs, and export payment data to downstream systems."
+---
+
+The Hyperswitch Control Center gives your entire payments team — engineering, finance, operations, and customer support — a single interface to monitor payment health, diagnose failures, and streamline day-to-day tasks.
+
+<CardGroup cols={2}>
+  <Card title="Payment analytics" icon="chart-line">
+    Track conversion rates, success rates, and processed volume across all processors.
+  </Card>
+  <Card title="Drop-off analysis" icon="funnel-dollar">
+    Identify where in the checkout funnel customers are abandoning payments.
+  </Card>
+  <Card title="Transaction logs" icon="list">
+    Search, filter, and inspect individual payment events in real time.
+  </Card>
+  <Card title="Data export" icon="file-export">
+    Export payment data to Redshift, S3, or other downstream systems via automated reports.
+  </Card>
+</CardGroup>
+
+## Understanding the payment conversion funnel
+
+Hyperswitch tracks the full payment lifecycle from the moment a payment is created, not just from the point the customer clicks **Pay**. This gives you visibility into drop-offs that processor dashboards typically omit.
+
+A typical funnel over 100,000 initiated payments looks like this:
+
+| Stage | Count | Notes |
+|-------|-------|-------|
+| Payments created | 100,000 | Payment object created via the API |
+| Drop-off before checkout page | −10,000 | User left before SDK rendered |
+| Drop-off at checkout page | −10,000 | User abandoned the checkout form |
+| **Payment confirmed by user** | **80,000** | User submitted payment details |
+| **Payment confirmation rate** | **80%** | Confirmed / created |
+| Failed 3DS verification | −2,000 | Authentication rejected by issuer |
+| Drop-off at 3DS page | −3,000 | User did not complete 3DS |
+| Declined due to fraud | −1,000 | Risk or fraud rules blocked payment |
+| Authorized but not captured | −4,000 | Pending merchant capture |
+| **Successful payments** | **70,000** | Status = `succeeded` |
+| **Payment success rate** | **87.5%** | Succeeded / confirmed |
+| **Overall conversion rate** | **70%** | Succeeded / created |
+
+### Key metrics defined
+
+**Overall conversion rate**
+Total successful payments divided by total payments created. Includes all drop-off points — shopping cart, checkout page, and authentication pages.
+
+**Payment success rate**
+Total successful payments divided by all user-confirmed payments (those where the customer clicked **Pay**). Drop-offs at the 3DS page, bank transfer login, and digital wallet pages (PayPal, Google Pay, Apple Pay) are included. Authorized-but-not-captured payments are excluded because they do not settle to your account.
+
+**Processed amount**
+Sum of the amount of all payments with `status = succeeded`. Authorized-but-not-captured payments are not included.
+
+**Average ticket size**
+Total amount for which payments were created divided by the total number of payments created.
+
+<Note>
+  Payment processor dashboards (Stripe, Adyen, PayPal) typically report only the authorization rate, which excludes user drop-offs at the checkout page and 3DS failures. This is why your Hyperswitch conversion rate will appear lower — it is measuring more of the funnel.
+</Note>
+
+## Diagnosing conversion problems
+
+The analytics section of the Control Center surfaces patterns in payment failures. Use the table below as a starting point.
+
+| Symptom | Common causes | Suggested actions |
+|---------|--------------|-------------------|
+| High drop-off at checkout page | Limited payment methods, confusing UX | Add payment methods preferred by your audience; simplify the checkout layout |
+| Low conversion for a specific processor | Processor outage or configuration issue | Enable a backup processor via Hyperswitch and configure smart routing to shift volume |
+| Low conversion for a specific currency | Currency not enabled on processor account | Verify with your processor that the currency is active for your merchant account |
+| Zero conversion for a payment method | Method not enabled or not configured | Check processor configuration and routing rules |
+| Lower conversion for USD vs EUR | Regional processor performance differences | Route specific currencies to processors with stronger local authorization rates |
+
+<Tip>
+  Reach out to **biz@hyperswitch.io** with your conversion data if you want Hyperswitch to review your configuration and suggest routing improvements.
+</Tip>
+
+## Real-time analytics in the Control Center
+
+The **Analytics** section of the Control Center provides live dashboards for:
+
+- **Payment analytics** — success rate, overall conversion rate, processed amount, and average ticket size, with time-range filtering.
+- **Refund analytics** — refund volume, refund success rates, and failure patterns.
+- **Smart retries analytics** — how many failed payments were recovered through automatic retries and which processors succeeded on retry.
+
+All analytics views support filtering by profile, time range, payment method, currency, and processor, so you can isolate the segment you care about.
+
+## Viewing and filtering transaction logs
+
+Every payment, refund, mandate, and dispute event is logged and searchable in real time.
+
+### Searching for a transaction
+
+<Steps>
+  <Step title="Open the Operations section">
+    In the Control Center, navigate to **Operations → Payments** (or **Refunds**, **Disputes**).
+  </Step>
+  <Step title="Apply filters">
+    Filter by payment status, payment method, currency, processor, date range, or customer ID. You can combine multiple filters.
+  </Step>
+  <Step title="Inspect a payment">
+    Click any row to open the full payment detail view, which includes the payment timeline, processor response codes, metadata, and associated refunds or disputes.
+  </Step>
+</Steps>
+
+### Global search
+
+Use the global search bar in the Control Center to find a specific payment, customer, or transaction ID across all merchant accounts and profiles that your user has access to. This is useful for customer support workflows where you need to look up a transaction without knowing which profile it belongs to.
+
+## Payment operations by team
+
+Hyperswitch consolidates payment operations across the teams that typically touch payment data:
+
+<AccordionGroup>
+  <Accordion title="Customer experience team">
+    - Issue refunds directly from the payment detail view without engineering involvement.
+    - Monitor failed refunds and proactively follow up on delayed refunds.
+    - Look up individual payment statuses to resolve customer queries about double debits or incomplete payments.
+  </Accordion>
+  <Accordion title="Finance team">
+    - Run reconciliation across all processors from a single interface.
+    - Access dispute details and upload evidence to challenge chargebacks.
+    - Monitor fraud rates and payment processing costs.
+    - Generate reports for specific business units or profiles.
+    - Trigger bulk refunds for product returns or promotions.
+  </Accordion>
+  <Accordion title="Business operations and growth">
+    - Track authorization rates over time and across processors.
+    - Monitor expansion into new markets by filtering analytics by currency or region.
+    - Produce cross-profile and cross-merchant reports for consolidated business reviews.
+  </Accordion>
+</AccordionGroup>
+
+## Automated reports
+
+Hyperswitch can generate and deliver scheduled reports covering:
+
+- Payment volume and success rates by profile, processor, or payment method.
+- Refund activity and reconciliation summaries.
+- Dispute and chargeback summaries.
+
+Reports can be delivered to your team on a daily, weekly, or monthly cadence. Configure report schedules under **Settings → Reports** in the Control Center.
+
+## Exporting payment data
+
+For deeper analysis in your data warehouse or BI tools, you can export payment data from Hyperswitch.
+
+### Export options
+
+<Tabs>
+  <Tab title="Manual export">
+    From **Operations → Payments**, apply your filters and click **Generate Reports** to produce a downloadable report containing all payment records matching your filter criteria. The same option is available for refunds and disputes.
+  </Tab>
+  <Tab title="Redshift / data warehouse">
+    Hyperswitch supports streaming payment events to Amazon Redshift and other data warehouses. Contact your Hyperswitch account team to configure a data pipeline for your environment.
+  </Tab>
+  <Tab title="Webhooks">
+    Subscribe to payment, refund, and dispute webhook events to receive real-time updates in your own systems. Configure webhook endpoints per profile under **Settings → Business Profiles → Webhook URL**.
+  </Tab>
+</Tabs>
+
+### Webhook event types
+
+Key event types you can subscribe to:
+
+| Event | Triggered when |
+|-------|----------------|
+| `payment.succeeded` | Payment status transitions to `succeeded` |
+| `payment.failed` | Payment status transitions to `failed` |
+| `refund.succeeded` | Refund is successfully processed |
+| `refund.failed` | Refund processing fails |
+| `dispute.opened` | A new dispute is created |
+| `dispute.challenged` | Merchant evidence is submitted for a dispute |
+| `dispute.won` | Merchant wins a dispute challenge |
+| `dispute.lost` | Merchant loses a dispute challenge |
+
+## Monitoring and alerts
+
+<CardGroup cols={2}>
+  <Card title="Real-time dashboards" icon="gauge-high">
+    The Control Center refreshes metrics in real time so your operations team can react to sudden drops in conversion or processor outages immediately.
+  </Card>
+  <Card title="Alerts automation" icon="bell">
+    Configure alerts for anomalies such as a processor success rate dropping below a threshold. Alerts are delivered via your configured notification channel.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Inadequate monitoring of payment operations can negatively impact your Net Promoter Score and delay fraud detection. Set up alerts for critical payment metrics before going live.
+</Warning>

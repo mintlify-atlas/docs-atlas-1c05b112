@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Hyperswitch",
+  "projectType": "saas",
+  "projectName": "Hyperswitch",
+  "projectDescription": "An open-source, composable payment orchestration platform that lets you route, optimize, and manage payments across 100+ processors from a single integration.",
   "theme": "luma",
-  "colors": {
-    "primary": "#343434",
-    "light": "#046cfb",
-    "dark": "#7bb4fc"
-  },
-  "favicon": "https://media.brand.dev/8a2154ae-425c-4806-927c-6a1e6e2870ee.png",
-  "logo": {
-    "light": "https://media.brand.dev/93630264-9168-47e4-a31b-1a6311e4e079.svg",
-    "dark": "https://media.brand.dev/93630264-9168-47e4-a31b-1a6311e4e079.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/juspay/hyperswitch"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/juspay/hyperswitch"
-    }
-  },
+  "primaryColor": "#343434",
+  "lightColor": "#046cfb",
+  "darkColor": "#7bb4fc",
   "navigation": {
     "tabs": [
       {
@@ -111,5 +94,32 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Smart payment routing across 100+ processors",
+    "Unified payment orchestration with fallback and retry logic",
+    "PCI-compliant card vault and tokenization",
+    "Multi-platform checkout SDK (Web, iOS, Android, React Native)",
+    "3DS Decision Manager for adaptive authentication",
+    "Cost observability and revenue recovery",
+    "Payment reconciliation",
+    "Open-source with cloud and self-hosted deployment options",
+    "Prism: unified connector library for AI agents and developers"
+  ],
+  "publicApiSurface": [
+    "POST /payments (create payment)",
+    "POST /payments/{id}/confirm",
+    "POST /payments/{id}/capture",
+    "POST /refunds",
+    "POST /payouts/create",
+    "GET /payments/{id}",
+    "POST /customers",
+    "POST /payment_methods",
+    "PaymentClient.createOrder() (Prism SDK)",
+    "PaymentClient.authorize() (Prism SDK)",
+    "PaymentClient.capture() (Prism SDK)",
+    "PaymentClient.refund() (Prism SDK)",
+    "HyperLoader (Web SDK)",
+    "HyperElements (Web SDK)"
+  ]
 }

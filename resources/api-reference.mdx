@@ -1,0 +1,206 @@
+---
+title: "API Reference"
+description: "Overview of the Hyperswitch REST API — base URLs, authentication, key endpoint groups, and request/response examples."
+---
+
+The Hyperswitch REST API gives you programmatic access to the full payments platform. You can create and manage payments, issue refunds, store customers, configure payment methods, send payouts, and handle disputes — all through a single unified interface regardless of which payment processors you have connected.
+
+The full interactive API reference, including live request execution, is available at [api-reference.hyperswitch.io](https://api-reference.hyperswitch.io/introduction).
+
+## Base URLs
+
+All API requests are made over HTTPS. Use the sandbox URL during development and testing. Switch to the production URL when you are ready to process real payments.
+
+| Environment | Base URL                         |
+|-------------|----------------------------------|
+| Sandbox     | `https://sandbox.hyperswitch.io` |
+| Production  | `https://api.hyperswitch.io`     |
+
+<Note>
+  Sandbox keys start with `snd_` (secret) and `pk_snd_` (publishable). Production keys start with `prd_` and `pk_prd_`. Never use a production key in test code or commit any key to source control.
+</Note>
+
+## Authentication
+
+All API requests require your secret API key in the `api-key` header. You can create and manage API keys from the Control Center under **Developers → Keys**.
+
+```http
+api-key: snd_xxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Your publishable key (`pk_snd_...` or `pk_prd_...`) is used only on the client side to initialize the Web SDK or mobile SDKs. The publishable key does not authenticate server-side API calls.
+
+<Warning>
+  Never include your secret API key in client-side code, browser requests, or mobile apps. If a key is exposed, rotate it immediately from the Control Center.
+</Warning>
+
+## Endpoint groups
+
+<CardGroup cols={2}>
+  <Card title="Payments" icon="credit-card">
+    Create, confirm, capture, cancel, and retrieve payment intents. The payments API is the core of all transaction flows.
+  </Card>
+  <Card title="Refunds" icon="arrow-uturn-left">
+    Initiate full or partial refunds against a captured payment. Retrieve refund status and track refund lifecycle events.
+  </Card>
+  <Card title="Customers" icon="user">
+    Store customer records and link payment methods to customers for faster checkout and recurring payment flows.
+  </Card>
+  <Card title="Payment Methods" icon="wallet">
+    Create, list, and delete stored payment methods. Supports cards, wallets, bank accounts, and other method types.
+  </Card>
+  <Card title="Payouts" icon="money-bill-transfer">
+    Send funds to bank accounts, cards, or wallets. Supports ACH, SEPA, BACS, and card payout rails.
+  </Card>
+  <Card title="Disputes" icon="scale-balanced">
+    Retrieve and respond to chargebacks and disputes. Track dispute lifecycle from opened through won or lost.
+  </Card>
+</CardGroup>
+
+## Creating a payment
+
+The most common operation is creating a payment intent on your server, then confirming it on the client using the Web SDK or mobile SDK. The server-side call returns a `client_secret` that is passed to the SDK.
+
+<Steps>
+  <Step title="Create a payment intent on your server">
+    Make a `POST /payments` request from your backend with the amount, currency, and any other transaction parameters you want to capture.
+
+    <CodeGroup>
+
+    ```bash cURL
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/payments \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: snd_xxxxxxxxxxxxxxxxxxxxxxxx' \
+      --data '{
+        "amount": 2000,
+        "currency": "USD",
+        "capture_method": "automatic",
+        "customer_id": "cus_abc123",
+        "description": "Order #1042",
+        "return_url": "https://example.com/payment/complete",
+        "metadata": {
+          "order_id": "1042"
+        }
+      }'
+    ```
+
+    ```javascript Node.js
+    const hyperswitch = require('@juspay-tech/hyperswitch-node')('snd_xxxxxxxx');
+
+    const payment = await hyperswitch.paymentIntents.create({
+      amount: 2000,
+      currency: "USD",
+      capture_method: "automatic",
+      customer_id: "cus_abc123",
+      description: "Order #1042",
+      return_url: "https://example.com/payment/complete",
+      metadata: {
+        order_id: "1042"
+      }
+    });
+
+    const clientSecret = payment.client_secret;
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Receive the response">
+    A successful request returns a payment object. The `client_secret` field is what you pass to the client-side SDK to display the payment UI and handle confirmation.
+
+    ```json
+    {
+      "payment_id": "pay_4xFHmCQBbL38Ny7sCp3e",
+      "merchant_id": "merchant_abc",
+      "status": "requires_payment_method",
+      "amount": 2000,
+      "currency": "USD",
+      "client_secret": "pay_4xFHmCQBbL38Ny7sCp3e_secret_xxxxxxxxxxxxxxxx",
+      "capture_method": "automatic",
+      "description": "Order #1042",
+      "customer_id": "cus_abc123",
+      "return_url": "https://example.com/payment/complete",
+      "metadata": {
+        "order_id": "1042"
+      },
+      "created": "2026-01-15T10:30:00Z"
+    }
+    ```
+  </Step>
+
+  <Step title="Confirm the payment on the client">
+    Pass the `client_secret` to your frontend. The SDK uses it to authenticate the payment confirmation without exposing your secret API key to the browser.
+
+    ```javascript
+    const { error } = await hyper.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: "https://example.com/payment/complete"
+      }
+    });
+    ```
+  </Step>
+</Steps>
+
+## Idempotency
+
+Include an `Idempotency-Key` header in any mutating request to prevent duplicate operations when retrying failed network requests. Use a UUID or any unique string generated by your system.
+
+```http
+Idempotency-Key: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+```
+
+If Hyperswitch receives a second request with the same idempotency key within 24 hours, it returns the original response without executing the operation again.
+
+## Amounts and currencies
+
+All amounts are specified in the smallest currency unit (minor units). For USD, `1000` represents $10.00. For JPY, `1000` represents ¥1000 (JPY has no minor unit subdivision).
+
+Currencies use [ISO 4217](https://en.wikipedia.org/wiki/ISO_4217) three-letter codes: `USD`, `EUR`, `GBP`, `INR`, and so on.
+
+## Postman collection
+
+A complete Postman collection covering all API endpoints is available in the [Hyperswitch Postman workspace](https://www.postman.com/hyperswitch/workspace/hyperswitch-development/collection/25176162-630b5353-7002-44d1-8ba1-ead6c230f2e3). The collection includes pre-configured request bodies and environment variables for both sandbox and production.
+
+<Steps>
+  <Step title="Import the collection">
+    Open Postman and click **Import**. Paste the Postman workspace URL or search for "Hyperswitch" in the Postman public API network.
+  </Step>
+  <Step title="Set environment variables">
+    Create a Postman environment and set `base_url` to `https://sandbox.hyperswitch.io` and `api_key` to your sandbox secret key.
+  </Step>
+  <Step title="Run requests">
+    Use the **Merchant Account - Create**, **API Key - Create**, and **Payments - Create** requests in sequence to set up your account and run a test payment.
+  </Step>
+</Steps>
+
+## Error responses
+
+All errors follow a consistent format. See [Error Codes](/resources/error-codes) for the full list of error codes and remediation steps.
+
+```json
+{
+  "type": "invalid_request",
+  "message": "Missing required field: amount",
+  "code": "IR_06",
+  "reason": "The amount field is required to create a payment"
+}
+```
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Interactive API reference" icon="terminal" href="https://api-reference.hyperswitch.io/introduction">
+    Browse and test all endpoints directly in your browser.
+  </Card>
+  <Card title="Webhooks" icon="anchor" href="/resources/webhooks">
+    Receive real-time event notifications for payment status changes.
+  </Card>
+  <Card title="Error codes" icon="triangle-exclamation" href="/resources/error-codes">
+    Understand and handle API error responses.
+  </Card>
+  <Card title="Node SDK reference" icon="node" href="https://github.com/juspay/hyperswitch-node">
+    Server-side Node.js SDK for the Hyperswitch API.
+  </Card>
+</CardGroup>

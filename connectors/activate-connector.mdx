@@ -1,0 +1,345 @@
+---
+title: "Activate a connector"
+description: "Configure a payment processor in the Hyperswitch Control Center or via API. Enter credentials, select payment methods, set up webhooks, and run a test transaction."
+---
+
+Before you can route payments through a processor, you need to activate it as a connector in Hyperswitch. This creates a **merchant connector account (MCA)** — a configuration record that binds your PSP credentials to a specific business profile.
+
+<Note>
+  You must have an account registered with the payment processor before you can activate it in Hyperswitch. If you don't have one, sign up with the processor first to obtain your API credentials.
+</Note>
+
+<Tabs>
+  <Tab title="Control Center">
+    ## Activate a connector in the Control Center
+
+    <Steps>
+      <Step title="Open the Connectors section">
+        Sign in to the [Hyperswitch Control Center](https://app.hyperswitch.io) and navigate to **Connectors** in the left sidebar.
+
+        You will see the full list of available payment processors. Find the processor you want to activate and click **+ Connect**.
+      </Step>
+
+      <Step title="Select a business profile">
+        Each connector is scoped to a specific business profile. The active profile is shown in the dropdown at the top-right of the dashboard.
+
+        If you have multiple profiles (for example, separate profiles for different regions or business lines), switch to the correct one before continuing. The connector will only be available for payments routed under that profile.
+      </Step>
+
+      <Step title="Enter connector credentials">
+        Enter the API credentials from your PSP dashboard. The required fields vary by processor:
+
+        | Processor | Required fields |
+        |---|---|
+        | Stripe | Secret Key (starts with `sk_`) |
+        | Adyen | API Key and Account ID |
+        | Braintree | Merchant ID, Public Key, Private Key |
+        | PayPal | Client ID and Client Secret |
+        | Authorize.net | API Login ID and Transaction Key |
+        | Cybersource | API Key, Secret Key, and Merchant ID |
+        | Fiserv | API Key, API Secret, Merchant ID, Terminal ID |
+        | Airwallex | API Key and Client ID |
+
+        You can also set a **Connector Label** — a unique identifier for this connector account within your profile. This is useful when you have multiple accounts with the same processor.
+
+        If the processor supports **webhook source verification**, enter the Source Verification Key so Hyperswitch can authenticate incoming webhook payloads.
+      </Step>
+
+      <Step title="Select payment methods">
+        Choose the payment methods you want to enable through this connector. Only select methods that are also configured and enabled in your PSP dashboard — enabling a method here that is not active in the PSP's account will cause payment failures.
+
+        Common options include:
+
+        - **Cards** — Visa, Mastercard, Amex, Discover, UnionPay
+        - **Digital wallets** — Apple Pay, Google Pay, PayPal
+        - **Buy now, pay later** — Klarna, Afterpay, Affirm
+        - **Bank redirects** — iDEAL, Sofort, Bancontact, EPS
+        - **Bank debits** — ACH, BACS, SEPA direct debit
+      </Step>
+
+      <Step title="Configure webhooks (optional)">
+        If the processor supports webhooks, Hyperswitch provides a webhook endpoint URL specific to your connector account. Copy this URL from the Control Center and add it in your PSP dashboard.
+
+        This ensures the processor sends payment events (captures, refunds, disputes) back to Hyperswitch, which then forwards them to your configured webhook endpoint.
+
+        **For Stripe:**
+        1. In the Control Center, go to **Settings → Payment settings** and open your profile to find the Hyperswitch webhook URL
+        2. In your Stripe dashboard, go to **Developers → Webhooks** and click **Add an endpoint**
+        3. Paste the Hyperswitch URL and subscribe to the relevant events
+
+        **For Adyen:**
+        1. In your Adyen dashboard, go to **Developers → Webhooks**
+        2. Create a new standard webhook and paste the Hyperswitch endpoint URL
+        3. Copy the HMAC key and enter it as the Source Verification Key in the Hyperswitch Control Center
+
+        <Tip>
+          Webhooks are strongly recommended in production. Without them, Hyperswitch relies on polling to determine the final status of asynchronous payment events.
+        </Tip>
+      </Step>
+
+      <Step title="Save and verify">
+        Click **Connect** (or **Save**) to activate the connector. The processor now appears in your active connectors list under the selected profile.
+
+        You can verify the configuration is working by running a test transaction — see the [Test the connector](#test-the-connector) section below.
+      </Step>
+    </Steps>
+
+    ## Edit connector credentials
+
+    <Warning>
+      When updating connector credentials, you must re-enter all required fields — not just the ones that changed. Partial updates are not supported.
+    </Warning>
+
+    To update credentials for an existing connector:
+
+    1. Navigate to **Connectors** in the Control Center
+    2. Find the connector in your active connectors list (make sure the correct profile is selected)
+    3. Click the edit icon next to the connector
+    4. Re-enter all required credential fields in the dialog
+    5. Click **Save** to apply the changes
+  </Tab>
+
+  <Tab title="API">
+    ## Activate a connector via API
+
+    You can create and manage merchant connector accounts (MCAs) programmatically using the Hyperswitch REST API. This is useful for platforms that need to onboard connectors dynamically or automate connector setup across multiple merchant profiles.
+
+    ### Prerequisites
+
+    You need:
+    - A Hyperswitch API key (from **Developers → Keys** in the Control Center)
+    - Your merchant ID and profile ID
+    - Your PSP API credentials
+
+    ### Create a merchant connector account
+
+    Send a `POST` request to create an MCA. The `connector_account_details` object contains your PSP credentials.
+
+    <CodeGroup>
+
+    ```bash Stripe
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/account/{merchant_id}/connectors \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: YOUR_API_KEY' \
+      --data '{
+        "connector_type": "payment_processor",
+        "connector_name": "stripe",
+        "connector_account_details": {
+          "auth_type": "HeaderKey",
+          "api_key": "sk_test_your_stripe_secret_key"
+        },
+        "payment_methods_enabled": [
+          {
+            "payment_method": "card",
+            "payment_method_types": [
+              {
+                "payment_method_type": "credit",
+                "card_networks": ["Visa", "Mastercard", "AmericanExpress"],
+                "minimum_amount": 1,
+                "maximum_amount": 68607706,
+                "recurring_enabled": true,
+                "installment_payment_enabled": true
+              }
+            ]
+          }
+        ],
+        "profile_id": "pro_your_profile_id",
+        "status": "active"
+      }'
+    ```
+
+    ```bash Adyen
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/account/{merchant_id}/connectors \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: YOUR_API_KEY' \
+      --data '{
+        "connector_type": "payment_processor",
+        "connector_name": "adyen",
+        "connector_account_details": {
+          "auth_type": "BodyKey",
+          "api_key": "your_adyen_api_key",
+          "key1": "your_adyen_merchant_account_id"
+        },
+        "payment_methods_enabled": [
+          {
+            "payment_method": "card",
+            "payment_method_types": [
+              {
+                "payment_method_type": "credit",
+                "card_networks": ["Visa", "Mastercard"],
+                "minimum_amount": 1,
+                "maximum_amount": 68607706,
+                "recurring_enabled": true,
+                "installment_payment_enabled": true
+              }
+            ]
+          }
+        ],
+        "profile_id": "pro_your_profile_id",
+        "status": "active"
+      }'
+    ```
+
+    ```bash PayPal
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/account/{merchant_id}/connectors \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: YOUR_API_KEY' \
+      --data '{
+        "connector_type": "payment_processor",
+        "connector_name": "paypal",
+        "connector_account_details": {
+          "auth_type": "BodyKey",
+          "api_key": "your_paypal_client_secret",
+          "key1": "your_paypal_client_id"
+        },
+        "payment_methods_enabled": [
+          {
+            "payment_method": "wallet",
+            "payment_method_types": [
+              {
+                "payment_method_type": "paypal",
+                "recurring_enabled": false,
+                "installment_payment_enabled": false
+              }
+            ]
+          }
+        ],
+        "profile_id": "pro_your_profile_id",
+        "status": "active"
+      }'
+    ```
+
+    </CodeGroup>
+
+    A successful response returns the created MCA object, including a `merchant_connector_id` you can reference to update or delete the connector later.
+
+    ### List active connectors
+
+    ```bash
+    curl --request GET \
+      --url https://sandbox.hyperswitch.io/account/{merchant_id}/connectors \
+      --header 'api-key: YOUR_API_KEY'
+    ```
+
+    ### Update connector credentials
+
+    ```bash
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/account/{merchant_id}/connectors/{merchant_connector_id} \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: YOUR_API_KEY' \
+      --data '{
+        "connector_account_details": {
+          "auth_type": "HeaderKey",
+          "api_key": "sk_test_updated_key"
+        }
+      }'
+    ```
+
+    For the full request schema and all supported `auth_type` values, see the [API reference](https://api-reference.hyperswitch.io/introduction).
+  </Tab>
+</Tabs>
+
+---
+
+## Test the connector
+
+After activating a connector, run a test transaction to confirm the credentials and payment method configuration are working correctly.
+
+<Steps>
+  <Step title="Open the payment playground">
+    From the Control Center home page, click **Try a test payment**.
+
+    Select your business profile, choose a currency and amount, then click **Show Preview** to open the demo checkout page.
+  </Step>
+
+  <Step title="Enter test card details">
+    Use a test card number for the connector you are testing. The table below lists common test cards:
+
+    | Connector | Card number | Expiry | CVV |
+    |---|---|---|---|
+    | Stripe | `4242 4242 4242 4242` | 12/25 | 100 |
+    | Adyen | `4000 0200 0000 0000` | 03/30 | 737 |
+    | Braintree | `4111 1111 1111 1111` | 12/25 | 100 |
+    | Checkout.com | `4242 4242 4242 4242` | 12/25 | 100 |
+    | Authorize.net | `4242 4242 4242 4242` | 12/25 | 100 |
+    | Nuvei | `4444 3333 2222 1111` | 12/25 | 123 |
+    | Worldline | `4012 0000 3333 0026` | 12/25 | 123 |
+    | Global Payments | `4263 9700 0000 5262` | 12/25 | 100 |
+    | Fiserv | `4005 5500 0000 0019` | 02/35 | 123 |
+    | Bluesnap | `6011 0001 8033 1112` | 02/26 | 123 |
+
+    Click **Pay** to submit the transaction. You should see a success confirmation.
+  </Step>
+
+  <Step title="Verify in Operations">
+    In the left sidebar, go to **Operations → Payments**. The test transaction should appear in the payments list with a `succeeded` status.
+
+    If the transaction failed, check the error code returned — it usually indicates a credential mismatch, unsupported payment method, or a configuration issue on the PSP side.
+  </Step>
+</Steps>
+
+### Test credentials for other payment methods
+
+<AccordionGroup>
+  <Accordion title="Dummy connector cards (no PSP account required)">
+    Hyperswitch includes dummy connectors for testing without real PSP credentials. Different card numbers trigger different outcomes:
+
+    **Non-3DS — Success:**
+    - `4111 1111 1111 1111`
+    - `4242 4242 4242 4242`
+    - `5555 5555 5555 4444`
+    - `3800 0000 0000 06`
+
+    **Non-3DS — Failure scenarios:**
+    - Card declined: `5105 1051 0510 5100`
+    - Insufficient funds: `4000 0000 0000 9995`
+    - Lost card: `4000 0000 0000 9987`
+    - Stolen card: `4000 0000 0000 9979`
+
+    **3DS — Success:**
+    - `4000 0038 0000 0446`
+
+    For dummy connector cards, any future expiry date and any 3-digit CVV are accepted. Dummy connector payments expire after 2 days.
+  </Accordion>
+
+  <Accordion title="Klarna test credentials">
+    Simulate a successful Klarna payment using these credentials:
+
+    **United States:**
+    - Phone number: `+1 310 668 331`
+    - OTP: any 6-digit number except `999999` (for example, `123456`)
+
+    **United Kingdom:**
+    - Phone number: `+44 0808 258 0300`
+    - OTP: any 6-digit number except `999999`
+
+    For additional scenarios, see [Klarna sample customer data](https://docs.klarna.com/resources/test-environment/sample-customer-data/).
+  </Accordion>
+
+  <Accordion title="Google Pay test credentials">
+    To test Google Pay, you need a Gmail account enrolled in [Google's test user group](https://groups.google.com/g/googlepay-test-mode-stub-data).
+
+    After joining the group, log in to your Gmail account and select the Google Pay payment option in the checkout. Test cards are automatically available in your Google Pay wallet — no manual card entry is required.
+  </Accordion>
+
+  <Accordion title="Apple Pay test credentials">
+    Apple Pay sandbox testing requires an Apple developer account. Follow the steps in the [Apple Pay sandbox testing documentation](https://developer.apple.com/apple-pay/sandbox-testing/) to set up test cards on your device.
+
+    Apple Pay sandbox testing is only available in [15 supported countries](https://developer.apple.com/apple-pay/sandbox-testing/). If you are outside those countries, change your region in **System Preferences → Language & Region** to a supported country, then restart Safari.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Available connectors" icon="list" href="/connectors/available-connectors">
+    Browse all supported processors, their payment methods, and connector-specific setup notes.
+  </Card>
+  <Card title="Smart routing" icon="route" href="/features/smart-routing">
+    Configure routing rules to distribute traffic across multiple active connectors.
+  </Card>
+</CardGroup>

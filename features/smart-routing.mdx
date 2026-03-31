@@ -1,0 +1,263 @@
+---
+title: "Smart Routing"
+description: "Route every payment to the optimal processor using rule-based, volume-based, auth-rate-based, or least-cost strategies — with automatic fallback when a processor is unavailable."
+---
+
+Hyperswitch's Smart Router evaluates each payment against your configured routing logic and selects the best processor in real time. If the selected processor fails, the engine falls back automatically to the next eligible option without any manual intervention.
+
+<Note>
+  You need at least one payment processor configured in the Control Center before you can create a routing rule. Follow the [Connector Integration](/connectors/activate-connector) guide to add a processor.
+</Note>
+
+## Routing types
+
+<AccordionGroup>
+  <Accordion title="Rule-based routing" icon="ruler">
+    Rule-based routing lets you define explicit conditions that map payment attributes to one or more processors. Rules are evaluated top-to-bottom; the first matching rule's processor preference is used.
+
+    **When to use it:** You want deterministic control — for example, route all EUR payments through Adyen, or all transactions over $500 through Stripe with PayPal as a fallback.
+
+    **Supported conditions:**
+
+    | Dimension | Operators |
+    |-----------|-----------|
+    | Payment method | `is`, `is not` |
+    | Payment method type | `is`, `is not` |
+    | Currency | `is`, `is not` |
+    | Country | `is`, `is not`, `contains`, `not contains` |
+    | Amount | `=`, `>`, `<` |
+    | Card network | `is`, `is not` |
+    | Authentication type | `is`, `is not` |
+
+    **Processor preference types:**
+
+    - **Single processor** — all matched payments go to one connector (e.g. Stripe).
+    - **Split across processors** — distribute volume as percentages (e.g. Stripe 70 %, PayPal 30 %).
+    - **Single processor with fallback** — target one connector with one or more automatic fallback options (e.g. Stripe → PayPal).
+
+    **Configure via Control Center:**
+
+    <Steps>
+      <Step title="Open Routing">
+        In the Control Center, navigate to **Workflow** → **Routing** and click **Setup** under **Rule Based Configuration**.
+      </Step>
+      <Step title="Name the rule">
+        Enter a name and description, then build your conditions using the no-code UI.
+      </Step>
+      <Step title="Set processor preference">
+        Choose a single processor, a percentage split, or a processor with fallback.
+      </Step>
+      <Step title="Save and activate">
+        Click **Configure Rule**. In the popup, choose **Save and Activate** to apply the rule to live payments immediately, or **Save** to activate it later.
+      </Step>
+    </Steps>
+
+    **Example rule via API:**
+
+    ```json
+    {
+      "name": "EUR via Adyen",
+      "description": "Route all EUR payments to Adyen",
+      "algorithm": {
+        "type": "single",
+        "data": {
+          "connector": "adyen",
+          "merchant_connector_id": "mca_adyen_001"
+        }
+      },
+      "rules": [
+        {
+          "name": "eur_rule",
+          "connector_selection": {
+            "type": "single",
+            "data": { "connector": "adyen", "merchant_connector_id": "mca_adyen_001" }
+          },
+          "statements": [
+            {
+              "condition": [
+                { "lhs": "currency", "comparison": "equal", "value": { "type": "enum_variant", "value": "EUR" }, "metadata": {} }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Volume-based routing" icon="chart-simple">
+    Volume-based routing distributes payment traffic across multiple processors according to percentage weights you define. Hyperswitch uses a deterministic algorithm to ensure the distribution converges to the configured ratios over time.
+
+    **When to use it:** You want to A/B test processors, fulfill contractual volume commitments, or gradually migrate traffic from one processor to another.
+
+    **Configure via Control Center:**
+
+    <Steps>
+      <Step title="Open Routing">
+        Navigate to **Workflow** → **Routing** and click **Setup** under **Volume Based Configuration**.
+      </Step>
+      <Step title="Set volume splits">
+        Add each processor and assign a percentage. Percentages must sum to 100.
+      </Step>
+      <Step title="Save and activate">
+        Choose **Save and Activate** to apply immediately or **Save** to activate later.
+      </Step>
+    </Steps>
+
+    **Example configuration:**
+
+    ```json
+    {
+      "name": "Stripe-Adyen 70-30 split",
+      "algorithm": {
+        "type": "volume_split",
+        "data": [
+          { "connector": "stripe", "merchant_connector_id": "mca_stripe_001", "split": 70 },
+          { "connector": "adyen",  "merchant_connector_id": "mca_adyen_001",  "split": 30 }
+        ]
+      }
+    }
+    ```
+
+    <Tip>
+      Start with a small percentage on the new processor (e.g. 5 %) to validate behavior before increasing the split.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Auth-rate-based routing (ML)" icon="brain">
+    Auth-rate-based routing uses a **Non-stationary Multi-Armed Bandit (MAB)** model with delayed feedback to continuously optimize which processor receives traffic based on real-time authorization rates.
+
+    The model balances two goals:
+    - **Exploration** — route a configurable percentage of traffic to all processors to keep performance data current.
+    - **Exploitation** — route the majority of traffic to the best-performing processor.
+
+    Performance is tracked using a sliding window of configurable bucket size, so the model adapts quickly to processor-level incidents, issuer outages, or seasonal changes without manual intervention.
+
+    Auth rates are tracked at the granularity of: payment method, payment method type, amount range, currency, authentication type, and card network.
+
+    **When to use it:** You want to maximize first-attempt authorization rates automatically without managing static rules.
+
+    **Configure via API:**
+
+    <Steps>
+      <Step title="Enable the profile">
+        ```bash
+        curl --request POST \
+          'https://sandbox.hyperswitch.io/account/<merchant_id>/business_profile/<profile_id>/dynamic_routing/success_based/toggle?enable=dynamic_connector_selection' \
+          --header 'api-key: <api-key>'
+        ```
+      </Step>
+      <Step title="Set traffic split">
+        Set what percentage of payments the ML model controls. Start with a lower value to validate before rolling out fully.
+
+        ```bash
+        curl --request POST \
+          'https://sandbox.hyperswitch.io/account/<merchant_id>/business_profile/<profile_id>/dynamic_routing/set_volume_split?split=100' \
+          --header 'api-key: <api-key>'
+        ```
+      </Step>
+      <Step title="Tune model parameters">
+        ```bash
+        curl --request PATCH \
+          'https://sandbox.hyperswitch.io/account/<merchant_id>/business_profile/<profile_id>/dynamic_routing/success_based/config/<routing_id>' \
+          --header 'Content-Type: application/json' \
+          --header 'api-key: <api-key>' \
+          --data '{
+            "config": {
+              "min_aggregates_size": 5,
+              "max_aggregates_size": 8,
+              "current_block_threshold": { "max_total_count": 5 },
+              "exploration_percent": 20.0
+            }
+          }'
+        ```
+
+        | Parameter | Description |
+        |-----------|-------------|
+        | `min_aggregates_size` | Minimum buckets before scores influence routing (error tolerance offset) |
+        | `max_aggregates_size` | Maximum buckets used to calculate scores (controls reaction time) |
+        | `current_block_threshold.max_total_count` | Number of payments that form one bucket |
+        | `exploration_percent` | Percentage of traffic used for exploration across all processors |
+      </Step>
+      <Step title="Activate">
+        ```bash
+        curl --request POST \
+          'https://sandbox.hyperswitch.io/routing/<routing_id>/activate' \
+          --header 'api-key: <api-key>'
+        ```
+      </Step>
+    </Steps>
+  </Accordion>
+
+  <Accordion title="Least-cost routing" icon="hand-holding-dollar">
+    Least-cost routing (LCR) selects the cheapest debit network for each transaction by evaluating network fees, interchange rates, ticket size, and issuer type in real time. It routes the transaction by specifying the target network in the API request to the processor.
+
+    **When to use it:** You process a significant volume of US debit card payments and want to reduce MDR (merchant discount rate) by using local debit networks instead of Visa/Mastercard rails.
+
+    **Supported geography:** United States
+
+    **Supported debit networks:** Star, Pulse, NYCE, Accel
+
+    **Prerequisites:**
+
+    1. Configure connectors that support local network transactions.
+    2. Enable debit card support on those connectors.
+    3. Enable one or more local debit networks in both the connector settings and the Hyperswitch dashboard.
+
+    **Configure via Control Center:**
+
+    <Steps>
+      <Step title="Verify prerequisites">
+        Confirm that your connectors are set up with local networks enabled before proceeding.
+      </Step>
+      <Step title="Open Least Cost Routing">
+        Navigate to **Workflow** → **Routing** → **Least Cost Routing**.
+      </Step>
+      <Step title="Enable">
+        A confirmation popup walks you through the three prerequisites. Click **Enable** to activate LCR.
+      </Step>
+    </Steps>
+
+    <Note>
+      The LCR engine uses your MCC code to estimate transaction cost. If you have PSP–network level contracts, contact support to incorporate custom cost inputs into the decision model.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Default fallback routing" icon="shield">
+    Default fallback is always active. It is used when no other routing rule applies to a given payment, or when all connectors returned by the active routing algorithm fail the eligibility check.
+
+    The fallback list is an ordered priority list of all configured processors. Hyperswitch works through the list in order until a connector successfully processes the payment.
+
+    **Configure via Control Center:**
+
+    Navigate to **Routing** → **Default Fallback** → **Manage**. Drag and drop processors to set the priority order.
+
+    <Tip>
+      Keep your fallback list ordered by your most reliable processor first. Hyperswitch always falls back to this list for edge cases, so the order matters even when you have an active routing rule.
+    </Tip>
+  </Accordion>
+</AccordionGroup>
+
+## Eligibility analysis
+
+After routing selects a connector, Hyperswitch runs an eligibility check to confirm the connector can actually process the payment (correct payment method enabled, supported card network, currency support, etc.). If the connector fails the check, Hyperswitch moves to the next connector in the fallback list rather than failing the payment immediately.
+
+<Warning>
+  Payment methods shown in the checkout SDK reflect all methods enabled across all your connectors — not just the connector selected by your routing rule. If you do not want a specific payment method shown, disable it at the connector level in the Control Center.
+</Warning>
+
+## Routing FAQs
+
+<AccordionGroup>
+  <Accordion title="What parameters can I use in rule-based routing conditions?">
+    You can use: payment method, payment method type, country, currency, amount, card network, and authentication type. These map directly to parameters on the `/payments` request.
+  </Accordion>
+
+  <Accordion title="Why did a payment go through a connector not in my active routing rule?">
+    This happens when the connector selected by your rule fails the eligibility analysis for that specific payment (e.g. the selected processor does not support the payment method the customer chose). Hyperswitch falls back to the default fallback list and picks the next eligible processor. See the [eligibility analysis](#eligibility-analysis) section above.
+  </Accordion>
+
+  <Accordion title="Can I have multiple routing rules active at the same time?">
+    Only one routing algorithm can be active per business profile at a time. To switch algorithms, activate a new one — it replaces the previously active algorithm immediately.
+  </Accordion>
+</AccordionGroup>

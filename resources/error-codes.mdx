@@ -1,0 +1,266 @@
+---
+title: "Error Codes"
+description: "Understand Hyperswitch error responses, common error codes, and how to handle failures gracefully in your integration."
+---
+
+Hyperswitch returns structured error responses for all failed requests. Every error includes a machine-readable `code`, a human-readable `message`, an error `type` that categorizes the failure, and an optional `reason` with additional context.
+
+Understanding error codes lets you build resilient payment flows — distinguishing between problems you can fix (invalid parameters), problems the customer can resolve (insufficient funds), and problems that require retry logic (temporary processor outages).
+
+## Error response format
+
+```json
+{
+  "type": "invalid_request",
+  "message": "Missing required field: amount",
+  "code": "IR_06",
+  "reason": "The amount field is required to create a payment"
+}
+```
+
+| Field     | Type   | Description |
+|-----------|--------|-------------|
+| `type`    | string | Error category. Indicates where the error originated and how to handle it. |
+| `code`    | string | Hyperswitch-specific error code for programmatic handling. |
+| `message` | string | Human-readable description of the error. |
+| `reason`  | string | Additional context about the failure, when available. |
+
+### HTTP status codes
+
+| HTTP status | Meaning |
+|-------------|---------|
+| `400`       | Invalid request — missing or malformed parameters |
+| `401`       | Authentication failure — invalid or missing API key |
+| `404`       | Resource not found — payment, refund, or customer does not exist |
+| `422`       | Unprocessable entity — request is well-formed but semantically invalid |
+| `500`       | Internal server error — Hyperswitch infrastructure issue |
+
+## Error types
+
+<AccordionGroup>
+  <Accordion title="invalid_request_error">
+    Returned when the request is malformed, missing required fields, or contains invalid values. These errors are caused by your integration code and must be fixed before retrying.
+
+    | Code | Message | Cause and fix |
+    |------|---------|---------------|
+    | — | `Invalid api key` | The `api-key` header is missing, malformed, or does not match any active key. Create or retrieve a valid key from the Control Center under **Developers → Keys**. |
+    | — | `Invalid client secret` | The `client_secret` passed to the SDK does not match the payment intent. Ensure the client secret is fetched fresh for each checkout session and not reused. |
+    | — | `Invalid value for <parameter_name>` | A field contains a value of the wrong type or outside the allowed range. Check the API reference for the expected format. |
+    | — | `Missing required parameter: <parameter_name>` | A required field was omitted from the request. Add the missing field to your request body. |
+    | — | `Invalid promise` | A JavaScript SDK promise was called in an unsupported way. Check the SDK reference for the correct usage pattern. |
+
+    <Tip>
+      Log the full error object during development. The `reason` field often contains the specific parameter name and the expected format, which saves significant debugging time.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="processing_error">
+    Returned when the payment was accepted by Hyperswitch but declined or failed at the payment processor level.
+
+    | Code | Message | Cause and fix |
+    |------|---------|---------------|
+    | — | `Payment failed with the payment processor` | The processor returned a decline. Check the `error_code` on the payment object for the specific decline reason (see [Processor decline codes](#processor-decline-codes) below). |
+
+    Processing errors may be retryable (soft declines) or permanent (hard declines). Hyperswitch's smart retry logic automatically retries soft declines through alternative processors when configured.
+  </Accordion>
+
+  <Accordion title="internal_server_error">
+    Returned when Hyperswitch encounters an unexpected infrastructure failure.
+
+    | Code | Message | Cause and fix |
+    |------|---------|---------------|
+    | — | `Server is unavailable` | The Hyperswitch service is temporarily unavailable. Retry the request with exponential backoff. If the issue persists, check the Hyperswitch status page. |
+
+    These errors are not caused by your integration. Always implement retry logic with backoff for `5XX` responses.
+  </Accordion>
+
+  <Accordion title="object_not_found">
+    Returned when a resource referenced in the request does not exist in your merchant account.
+
+    | Code | Message | Cause and fix |
+    |------|---------|---------------|
+    | — | `Payment does not exist` | The `payment_id` is incorrect, belongs to a different merchant account, or the payment was not yet created. Verify the ID before retrying. |
+
+    Requests that look up a payment, refund, or customer using their ID return this error if no matching record is found.
+  </Accordion>
+
+  <Accordion title="confirm_payment_failed">
+    Returned by the Web SDK when payment confirmation cannot be completed.
+
+    | Code | Message | Cause and fix |
+    |------|---------|---------------|
+    | — | `An unknown error occurred` | An unexpected failure occurred during payment confirmation. Log the full error object for debugging and display a generic retry message to the customer. |
+  </Accordion>
+</AccordionGroup>
+
+## Web SDK error codes
+
+The Hyperswitch Web SDK returns client-side error codes to your website for graceful handling. These codes are distinct from server-side API error codes.
+
+| Error type | Error message | When it occurs |
+|------------|---------------|----------------|
+| `invalid_request_error` | `Invalid api key` | The publishable key passed to `loadHyper()` is invalid. |
+| `invalid_request_error` | `Invalid value for <parameter_name>` | A field passed to an SDK method contains an invalid value. |
+| `invalid_request_error` | `Missing required parameter: <parameter_name>` | A required field was not provided to an SDK method. |
+| `invalid_request_error` | `Invalid client secret` | The client secret passed to `hyper.elements()` is malformed or expired. |
+| `invalid_request_error` | `Invalid promise` | An SDK method was called incorrectly. Check the JS SDK reference. |
+| `processing_error` | `Payment failed with the payment processor` | The payment was declined at the processor level. |
+| `internal_server_error` | `Server is unavailable` | The Hyperswitch backend is temporarily unreachable. |
+| `object_not_found` | `Payment does not exist` | The payment referenced by the client secret cannot be found. |
+| `confirm_payment_failed` | `An unknown error occurred` | An unexpected error during payment confirmation. |
+
+Handle SDK errors in the `error` object returned by `hyper.confirmPayment()`:
+
+```javascript
+const { error, paymentIntent } = await hyper.confirmPayment({
+  elements,
+  confirmParams: {
+    return_url: "https://example.com/payment/complete"
+  },
+  redirect: "if_required"
+});
+
+if (error) {
+  if (error.type === 'invalid_request_error') {
+    // Show a message to fix the input fields
+    showError(error.message);
+  } else if (error.type === 'processing_error') {
+    // Payment was declined — prompt the customer to try another card
+    showError("Your payment was declined. Please try a different payment method.");
+  } else {
+    // Generic fallback
+    showError("Something went wrong. Please try again.");
+  }
+}
+```
+
+## Processor decline codes
+
+When a payment is declined by the processor, the payment object contains an `error_code` field with a normalized decline reason. Hyperswitch maps all connector-specific decline codes into a unified set of values.
+
+<AccordionGroup>
+  <Accordion title="Card and account errors">
+    | Error code | Description | Retryable? | Recommended action |
+    |------------|-------------|------------|-------------------|
+    | `card_declined` | Generic decline — card issuer did not specify a reason | No | Prompt the customer to contact their bank or use a different card. |
+    | `do_not_honor` | Issuer declined without a specific reason | No | Prompt the customer to contact their bank. |
+    | `insufficient_funds` | The customer's account does not have enough funds | No | Ask the customer to use a different card or payment method. |
+    | `invalid_cvc` | The card security code is incorrect | No | Ask the customer to check and re-enter the CVV. |
+    | `incorrect_number` | The card number is invalid | No | Ask the customer to verify the card number. |
+    | `invalid_expiry_month` | The expiration month is invalid | No | Ask the customer to verify the expiry date. |
+    | `invalid_expiry_year` | The expiration year is invalid | No | Ask the customer to verify the expiry date. |
+    | `expired_card` | The card has expired | No | Ask the customer to use a different card. |
+    | `account_closed` | The bank account linked to the payment method is closed | No | Ask the customer to use a different payment method. |
+  </Accordion>
+
+  <Accordion title="Fraud and security declines">
+    | Error code | Description | Retryable? | Recommended action |
+    |------------|-------------|------------|-------------------|
+    | `fraudulent` | Transaction declined due to suspected fraud | No | Do not automatically retry. Flag for manual review if needed. |
+    | `lost_card` | Card reported as lost | No | Do not retry. Card is blocked. |
+    | `stolen_card` | Card reported as stolen | No | Do not retry. Card is blocked. |
+    | `pickup_card` | Card must be retained (reported lost or stolen) | No | Do not retry. |
+    | `merchant_blacklist` | Transaction blocked by a merchant-level blocklist | No | Review your fraud rules in the Control Center. |
+    | `risk_decline` | Transaction declined by a risk or fraud engine | No | Do not automatically retry. |
+    | `pin_try_exceeded` | Maximum PIN attempts exceeded | No | Ask the customer to contact their bank. |
+    | `card_decline_rate_limit_exceeded` | Card has been declined too many times in a short window | No | Do not retry for 24 hours. |
+  </Accordion>
+
+  <Accordion title="Temporary and retryable errors">
+    | Error code | Description | Retryable? | Recommended action |
+    |------------|-------------|------------|-------------------|
+    | `processing_temporarily_unavailable` | Processor or network is temporarily unavailable | Yes | Retry automatically through an alternative connector. |
+    | `system_malfunction` | Technical failure at the processor | Yes | Retry automatically through an alternative connector. |
+    | `transaction_not_permitted_on_network` | Network-level restriction that may resolve on retry | Yes | Retry through a different processor or network. |
+    | `invalid_cryptogram` | Cryptographic token issue that may resolve on retry | Yes | Retry through a different connector. |
+    | `network_token_not_supported` | Network token not supported by this specific processor | Yes | Retry through a processor that supports network tokens. |
+  </Accordion>
+
+  <Accordion title="Transaction type and configuration errors">
+    | Error code | Description | Retryable? | Recommended action |
+    |------------|-------------|------------|-------------------|
+    | `card_not_supported` | The card type does not support this transaction | No | Ask the customer to use a different card. |
+    | `currency_not_supported` | The selected currency is not supported by the processor | No | Check your connector configuration or route to a connector that supports the currency. |
+    | `transaction_not_permitted` | Transaction type is not permitted on this card | No | Ask the customer to use a different card or payment method. |
+    | `call_issuer` | Issuer declined for an unspecified reason | No | Prompt the customer to call the number on the back of their card. |
+  </Accordion>
+</AccordionGroup>
+
+## Connector error code normalization
+
+Hyperswitch normalizes raw processor error codes into the unified codes above. This means you write error handling logic once and it works across all connected processors.
+
+| Connector | Raw error code | Hyperswitch error code |
+|-----------|----------------|------------------------|
+| Stripe    | `card_declined` | `card_declined` |
+| Adyen     | `Refused` | `card_declined` |
+| Stripe    | `insufficient_funds` | `insufficient_funds` |
+| Adyen     | `NotEnoughBalance` | `insufficient_funds` |
+| Stripe    | `fraudulent` | `fraudulent` |
+| Adyen     | `FRAUD` | `fraudulent` |
+
+For the full processor error code mapping, see the [smart retries documentation](https://docs.hyperswitch.io/explore-hyperswitch/workflows/smart-retries/processor-error-code-mapping).
+
+## Error handling best practices
+
+<AccordionGroup>
+  <Accordion title="Separate retryable from non-retryable errors">
+    Never automatically retry hard declines such as `fraudulent`, `stolen_card`, `expired_card`, or `do_not_honor`. Repeated attempts on these codes accumulate authorization fees without any chance of success.
+
+    Only retry soft declines: `processing_temporarily_unavailable`, `system_malfunction`, `invalid_cryptogram`, `transaction_not_permitted_on_network`, and `network_token_not_supported`.
+
+    Hyperswitch's smart retry module handles this classification automatically when you have multiple connectors configured.
+  </Accordion>
+
+  <Accordion title="Show helpful messages to customers">
+    Map processor decline codes to customer-facing messages that explain what happened and what to do next. Avoid surfacing raw error codes or technical terms.
+
+    ```javascript
+    const customerMessages = {
+      insufficient_funds: "Your card has insufficient funds. Please try a different card.",
+      expired_card: "Your card has expired. Please try a different card.",
+      invalid_cvc: "The security code you entered is incorrect. Please check your card.",
+      card_declined: "Your card was declined. Please contact your bank or try a different card.",
+      fraudulent: "This transaction could not be completed. Please contact your bank.",
+    };
+
+    function getCustomerMessage(errorCode) {
+      return customerMessages[errorCode] 
+        ?? "Your payment could not be processed. Please try again or use a different payment method.";
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Implement exponential backoff for server errors">
+    For HTTP `5XX` responses and `processing_temporarily_unavailable` errors, implement retry logic with exponential backoff and jitter to avoid overwhelming the processor during a degraded period.
+
+    ```javascript
+    async function retryWithBackoff(fn, maxAttempts = 3) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          return await fn();
+        } catch (err) {
+          if (attempt === maxAttempts || !isRetryable(err)) throw err;
+          const delay = Math.min(1000 * 2 ** attempt + Math.random() * 1000, 30000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Log the full error object">
+    Always log the complete error object in your server-side code, including `type`, `code`, `message`, and `reason`. Truncated error logs make debugging significantly harder when diagnosing production incidents.
+  </Accordion>
+</AccordionGroup>
+
+## Related resources
+
+<CardGroup cols={2}>
+  <Card title="Webhooks" icon="anchor" href="/resources/webhooks">
+    Receive real-time notifications when payments fail or change status.
+  </Card>
+  <Card title="API reference" icon="terminal" href="/resources/api-reference">
+    Full API reference including error response schemas.
+  </Card>
+</CardGroup>

@@ -1,0 +1,531 @@
+---
+title: "Web checkout SDK"
+description: "Integrate the Hyperswitch unified checkout into your web application using the JS or React SDK. Supports cards, wallets, buy now pay later, and 40+ payment methods."
+---
+
+The Hyperswitch web SDK embeds a secure, PCI-compliant payment form directly in your page. It supports React and vanilla JS, adapts to your app's visual style with 40+ styling APIs, and detects the customer's locale automatically.
+
+<CardGroup cols={3}>
+  <Card title="Inclusive" icon="globe">
+    Cards, digital wallets, buy now pay later, and local payment methods — all in one integration.
+  </Card>
+  <Card title="Consistent" icon="check-circle">
+    Smart payment forms, minimal redirections, and intelligent retries across all browsers.
+  </Card>
+  <Card title="Customizable" icon="palette">
+    Themes, layouts, and 40+ styling variables to blend the checkout with your product.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Place the `<HyperElements>` wrapper high in your component tree — on your homepage or layout component, not just the checkout page. This preloads SDK resources and reduces perceived load time from ~10–15 seconds on slow networks to under 5 ms.
+</Tip>
+
+## Prerequisites
+
+- A Hyperswitch account with a publishable key. Find it in the [developer dashboard](https://app.hyperswitch.io/developers).
+- Payment methods configured in the [connector settings](https://app.hyperswitch.io/dashboard/connectors).
+- A server endpoint that creates a payment intent and returns `client_secret`.
+
+---
+
+## Integration
+
+<Tabs>
+  <Tab title="React">
+
+<Steps>
+
+<Step title="Install the SDK packages">
+
+```bash
+npm install @juspay-tech/hyper-js @juspay-tech/react-hyper-js
+```
+
+</Step>
+
+<Step title="Load HyperLoader and wrap your app">
+
+Call `loadHyper` with your publishable key once, outside any component, so the promise is stable across renders. Wrap your checkout page (or the entire app) with `<HyperElements>` to preload SDK resources.
+
+```jsx
+// hyper.js — create this module once
+import { loadHyper } from "@juspay-tech/hyper-js";
+
+export const hyperPromise = loadHyper("YOUR_PUBLISHABLE_KEY", {
+  customBackendUrl: "YOUR_BACKEND_URL",
+  // Routes all SDK API calls (session, payments, confirm) through your backend
+});
+```
+
+</Step>
+
+<Step title="Create a payment intent on your server">
+
+Your server calls the Hyperswitch Payments API and returns the `client_secret` to the browser. Never expose your API key on the client.
+
+```js
+// Example Node.js / Express server route
+app.post("/create-payment", async (req, res) => {
+  const payment = await fetch("https://sandbox.hyperswitch.io/payments", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.HYPERSWITCH_API_KEY,
+    },
+    body: JSON.stringify({
+      amount: 1000,        // amount in the smallest currency unit
+      currency: "USD",
+      confirm: false,
+    }),
+  }).then((r) => r.json());
+
+  res.json({ clientSecret: payment.client_secret });
+});
+```
+
+</Step>
+
+<Step title="Fetch the client secret and initialize HyperElements">
+
+In your checkout component, fetch the `client_secret` as soon as the page loads, then pass it to `<HyperElements>`.
+
+```jsx
+import React, { useState, useEffect } from "react";
+import { HyperElements } from "@juspay-tech/react-hyper-js";
+import { hyperPromise } from "./hyper";
+import CheckoutForm from "./CheckoutForm";
+
+export default function App() {
+  const [clientSecret, setClientSecret] = useState(null);
+
+  useEffect(() => {
+    fetch("/create-payment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [{ id: "xl-tshirt" }], country: "US" }),
+    })
+      .then((res) => res.json())
+      .then((data) => setClientSecret(data.clientSecret));
+  }, []);
+
+  const options = { clientSecret };
+
+  return (
+    <div>
+      {clientSecret && (
+        <HyperElements options={options} hyper={hyperPromise}>
+          <CheckoutForm />
+        </HyperElements>
+      )}
+    </div>
+  );
+}
+```
+
+</Step>
+
+<Step title="Mount UnifiedCheckout and handle payment confirmation">
+
+Inside the `<HyperElements>` tree, use the `useHyper()` and `useWidgets()` hooks to access the SDK. Mount the `<UnifiedCheckout>` element and call `hyper.confirmPayment()` on form submit.
+
+```jsx
+import React, { useState } from "react";
+import { useHyper, useWidgets, UnifiedCheckout } from "@juspay-tech/react-hyper-js";
+
+export default function CheckoutForm() {
+  const hyper = useHyper();
+  const widgets = useWidgets();
+  const [message, setMessage] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const unifiedCheckoutOptions = {
+    wallets: {
+      walletReturnUrl: "https://example.com/complete",
+    },
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!hyper || !widgets) return;
+
+    setIsLoading(true);
+    setMessage("");
+
+    const { error, status } = await hyper.confirmPayment({
+      elements: widgets,
+      confirmParams: {
+        return_url: "https://example.com/complete",
+      },
+      redirect: "if_required",
+    });
+
+    if (error) {
+      setMessage(
+        error.type === "card_error" || error.type === "validation_error"
+          ? error.message
+          : "An unexpected error occurred."
+      );
+    }
+
+    if (status) {
+      // Handle non-redirect payment statuses
+      handlePaymentStatus(status);
+    }
+
+    setIsLoading(false);
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <UnifiedCheckout id="unified-checkout" options={unifiedCheckoutOptions} />
+      <button type="submit" disabled={isLoading}>
+        {isLoading ? "Processing..." : "Pay now"}
+      </button>
+      {message && <p>{message}</p>}
+    </form>
+  );
+}
+```
+
+</Step>
+
+<Step title="Display payment status on the return page">
+
+After a redirect-based payment, Hyperswitch appends `payment_intent_client_secret` to your `return_url`. Use it to retrieve the final payment status.
+
+```jsx
+import { useEffect, useState } from "react";
+import { useHyper } from "@juspay-tech/react-hyper-js";
+
+export default function PaymentStatus() {
+  const hyper = useHyper();
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!hyper) return;
+
+    const paymentID = new URLSearchParams(window.location.search).get(
+      "payment_intent_client_secret"
+    );
+    if (!paymentID) return;
+
+    hyper.retrievePaymentIntent(paymentID).then(({ paymentIntent }) => {
+      switch (paymentIntent.status) {
+        case "succeeded":
+          setMessage("Payment succeeded!");
+          break;
+        case "processing":
+          setMessage("Your payment is processing.");
+          break;
+        case "requires_payment_method":
+          setMessage("Payment was not successful. Please try again.");
+          break;
+        default:
+          setMessage("Something went wrong.");
+      }
+    });
+  }, [hyper]);
+
+  return <p>{message}</p>;
+}
+```
+
+<Warning>
+  Always retrieve the final payment status from the Hyperswitch backend. Do not rely solely on the status returned by the SDK, as it may not reflect the terminal state of the transaction.
+</Warning>
+
+</Step>
+
+</Steps>
+
+  </Tab>
+  <Tab title="Vanilla JS">
+
+<Steps>
+
+<Step title="Add the HyperLoader script">
+
+Include the script tag in your HTML. Do not self-host this script — it must be loaded from Hyperswitch to maintain PCI compliance.
+
+```html
+<script src="https://checkout.hyperswitch.io/v0/HyperLoader.js"></script>
+```
+
+</Step>
+
+<Step title="Create a payment intent on your server">
+
+Your server creates a payment intent via the Hyperswitch API and returns the `client_secret`.
+
+```js
+// server.js (Node/Express)
+app.post("/create-payment", async (req, res) => {
+  const payment = await fetch("https://sandbox.hyperswitch.io/payments", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.HYPERSWITCH_API_KEY,
+    },
+    body: JSON.stringify({ amount: 1000, currency: "USD", confirm: false }),
+  }).then((r) => r.json());
+
+  res.json({ clientSecret: payment.client_secret });
+});
+```
+
+</Step>
+
+<Step title="Initialize Hyper and create an Elements instance">
+
+```js
+const hyper = Hyper("YOUR_PUBLISHABLE_KEY", {
+  customBackendUrl: "YOUR_BACKEND_URL",
+});
+
+// Fetch the client secret from your server
+const { clientSecret } = await fetch("/create-payment", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ items: [{ id: "xl-tshirt" }] }),
+}).then((r) => r.json());
+
+const elements = hyper.elements({ clientSecret });
+```
+
+</Step>
+
+<Step title="Mount the payment element">
+
+Add a container element in your HTML, then mount the `UnifiedCheckout` element into it.
+
+```html
+<!-- index.html -->
+<form id="payment-form">
+  <div id="unified-checkout"></div>
+  <button id="submit-button">Pay now</button>
+  <p id="payment-message"></p>
+</form>
+```
+
+```js
+const paymentElementOptions = {
+  wallets: {
+    walletReturnUrl: "https://example.com/complete",
+  },
+};
+
+const paymentElement = elements.create("payment", paymentElementOptions);
+paymentElement.mount("#unified-checkout");
+```
+
+</Step>
+
+<Step title="Confirm payment on form submit">
+
+```js
+const form = document.getElementById("payment-form");
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const { error, status } = await hyper.confirmPayment({
+    elements,
+    confirmParams: {
+      return_url: "https://example.com/complete",
+    },
+    redirect: "if_required",
+  });
+
+  if (error) {
+    document.getElementById("payment-message").textContent = error.message;
+  } else if (status) {
+    handlePaymentStatus(status);
+  }
+});
+```
+
+</Step>
+
+<Step title="Display payment status on return">
+
+```js
+const paymentID = new URLSearchParams(window.location.search).get(
+  "payment_intent_client_secret"
+);
+
+if (paymentID) {
+  hyper.retrievePaymentIntent(paymentID).then(({ paymentIntent }) => {
+    const message = {
+      succeeded: "Payment succeeded!",
+      processing: "Your payment is processing.",
+      requires_payment_method: "Payment failed. Please try again.",
+    }[paymentIntent.status] ?? "Something went wrong.";
+
+    document.getElementById("payment-message").textContent = message;
+  });
+}
+```
+
+</Step>
+
+</Steps>
+
+  </Tab>
+</Tabs>
+
+---
+
+## Customization
+
+### Layouts
+
+The payment element supports two layouts. The default is `accordion`.
+
+<CodeGroup>
+
+```js Accordion layout
+var paymentElementOptions = {
+  layout: {
+    type: "accordion",
+    defaultCollapsed: false,
+    radios: true,
+    spacedAccordionItems: false,
+  },
+};
+```
+
+```js Tabs layout
+var paymentElementOptions = {
+  layout: "tabs",
+};
+```
+
+```js Tabs layout with grid
+var paymentElementOptions = {
+  layout: {
+    type: "tabs",
+    paymentMethodsArrangementForTabs: "grid",
+  },
+};
+```
+
+</CodeGroup>
+
+### Appearance
+
+Use the `appearance` object to match the checkout to your brand. Pass it to `hyper.elements()` or `<HyperElements options={...}>`.
+
+```js
+const appearance = {
+  variables: {
+    colorPrimary: "#0066cc",
+    colorBackground: "#ffffff",
+    colorText: "#1a1a1a",
+    colorDanger: "#e53e3e",
+    fontFamily: "Inter, system-ui, sans-serif",
+    borderRadius: "8px",
+    spacingUnit: "4px",
+    buttonBackgroundColor: "#0066cc",
+    buttonTextColor: "#ffffff",
+    buttonBorderRadius: "6px",
+  },
+  rules: {
+    ".Tab--selected": {
+      background: "linear-gradient(109deg, #f48836, #f4364c)",
+      color: "#ffffff",
+      fontWeight: "700",
+      borderRadius: "25px",
+    },
+    ".Tab--selected:hover": {
+      background: "linear-gradient(109deg, #f48836, #f4364c)",
+      color: "#ffffff !important",
+    },
+  },
+};
+
+const elements = hyper.elements({ clientSecret, appearance });
+```
+
+### Locale
+
+The SDK auto-detects the browser locale. To override it, pass a `locale` option to `hyper.elements()`.
+
+Supported locales include: `ar`, `ca`, `zh`, `de`, `nl`, `en`, `en-GB`, `fr-BE`, `fr`, `he`, `it`, `ja`, `pl`, `pt`, `ru`, `es`, `sv`.
+
+```js
+const elements = hyper.elements({ clientSecret, locale: "fr" });
+```
+
+### Wallet configuration
+
+```js
+var paymentElementOptions = {
+  wallets: {
+    walletReturnUrl: "https://example.com/complete",
+    applePay: "auto",   // "auto" | "never"
+    googlePay: "auto",
+    payPal: "auto",
+    klarna: "never",
+    style: {
+      theme: "dark",    // "dark" | "light" | "outline"
+      type: "pay",
+      height: 55,
+      buttonRadius: 4,
+    },
+  },
+};
+```
+
+### Payment method order
+
+```js
+var paymentElementOptions = {
+  paymentMethodOrder: ["card", "google_pay", "apple_pay", "klarna"],
+};
+```
+
+---
+
+## Wallet callback hooks
+
+You can hook into the wallet payment flow at two points:
+
+- `onPaymentButtonClick` — fires immediately when the user taps a wallet button.
+- `onPaymentComplete` — fires after payment completes, before the SDK redirects to `walletReturnUrl`. If you provide this callback, you must handle any redirection yourself.
+
+```jsx
+<UnifiedCheckout
+  id="unified-checkout"
+  options={paymentElementOptions}
+  onPaymentButtonClick={() => {
+    // Synchronous logic only — must complete within 1 second.
+    // Async callbacks that take longer can cause Apple Pay failures.
+    console.log("Wallet button clicked");
+  }}
+  onPaymentComplete={() => {
+    // Redirect or show a confirmation UI here.
+    window.location.href = "/order-confirmed";
+  }}
+/>
+```
+
+<Warning>
+  The `onPaymentButtonClick` callback must complete within 1 second. Exceeding this limit can cause Apple Pay to fail.
+</Warning>
+
+---
+
+## Error codes
+
+| Error type | Message |
+|---|---|
+| `invalid_request_error` | Invalid api key |
+| `invalid_request_error` | Invalid value for `<parameter_name>` |
+| `invalid_request_error` | Missing required parameter: `<parameter_name>` |
+| `invalid_request_error` | Invalid client secret |
+| `invalid_request_error` | Invalid promise |
+| `processing_error` | Payment failed with the payment processor |
+| `internal_server_error` | Server is unavailable |
+| `object_not_found` | Payment does not exist |
+| `confirm_payment_failed` | An unknown error occurred |

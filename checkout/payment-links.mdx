@@ -1,0 +1,275 @@
+---
+title: "Payment links"
+description: "Generate shareable, hosted payment pages without embedding an SDK. Send links via email, SMS, or any channel and track payment status via the Hyperswitch API."
+---
+
+Payment links are hosted, shareable URLs that let your customers pay without any SDK integration on your end. You create a payment link via the Hyperswitch API, share it with the customer through any channel, and Hyperswitch handles the payment page rendering and processing.
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Email and SMS invoices" icon="envelope">
+    Attach a payment link to an invoice email or SMS reminder for instant collection.
+  </Card>
+  <Card title="Social commerce" icon="share">
+    Share payment links through social media or messaging apps to collect payments without a website.
+  </Card>
+  <Card title="Phone and in-person payments" icon="phone">
+    Read a payment link to a customer over the phone or display a QR code in person.
+  </Card>
+  <Card title="Fundraising and donations" icon="heart">
+    Create links for one-time or recurring donation campaigns with custom branding.
+  </Card>
+</CardGroup>
+
+---
+
+## How payment links work
+
+1. Your server calls the Hyperswitch Payments API with `"payment_link": true`.
+2. Hyperswitch returns a `payment_link_url` in the response.
+3. You share that URL with the customer by any means (email, SMS, QR code, chat).
+4. The customer opens the link, sees a branded payment page, and completes payment.
+5. You track the payment status via webhooks or by querying the Payments API.
+
+<Note>
+  Payment links are valid for 15 minutes by default. You can extend the validity to up to 3 months (7,890,000 seconds) by passing `session_expiry` in the create request.
+</Note>
+
+---
+
+## Creating a payment link
+
+Payment links are created using the standard [Payments Create](https://api-reference.hyperswitch.io/api-reference/payments/payments--create) endpoint with `"payment_link": true`. The `confirm` field must not be set to `true` when creating a payment link.
+
+### Using business profile defaults
+
+If your business profile already has a `payment_link_config` set, you only need to pass `payment_link: true` and your `profile_id`:
+
+```bash
+curl --location 'https://sandbox.hyperswitch.io/payments' \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: YOUR_API_KEY' \
+  --data '{
+    "amount": 1000,
+    "currency": "USD",
+    "payment_link": true,
+    "profile_id": "pro_YXlbYtgiANENrZgxdL8Q"
+  }'
+```
+
+### With inline UI configuration
+
+You can override or set the payment link UI at creation time:
+
+```bash
+curl --location 'https://sandbox.hyperswitch.io/payments' \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: YOUR_API_KEY' \
+  --data '{
+    "amount": 1000,
+    "currency": "USD",
+    "payment_link": true,
+    "profile_id": "pro_YXlbYtgiANENrZgxdL8Q",
+    "payment_link_config": {
+      "theme": "#4E6ADD",
+      "logo": "https://example.com/logo.png",
+      "seller_name": "Example Store",
+      "sdk_layout": "accordion",
+      "display_sdk_only": true,
+      "enabled_saved_payment_method": true,
+      "hide_card_nickname_field": true,
+      "show_card_form_by_default": true,
+      "payment_button_text": "Complete payment",
+      "transaction_details": [
+        {
+          "key": "Order number",
+          "value": "ORD-20240101-001",
+          "ui_configuration": {
+            "position": 1,
+            "is_key_bold": true,
+            "is_value_bold": false
+          }
+        }
+      ]
+    }
+  }'
+```
+
+### Using a saved style ID
+
+If your business profile has multiple styles configured, reference one by ID:
+
+```bash
+curl --location 'https://sandbox.hyperswitch.io/payments' \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: YOUR_API_KEY' \
+  --data '{
+    "amount": 1000,
+    "currency": "USD",
+    "payment_link": true,
+    "profile_id": "pro_YXlbYtgiANENrZgxdL8Q",
+    "payment_link_config_id": "style1"
+  }'
+```
+
+### Example response
+
+The API returns the payment object including the `payment_link_url`:
+
+```json
+{
+  "payment_id": "pay_abc123",
+  "status": "requires_payment_method",
+  "amount": 1000,
+  "currency": "USD",
+  "payment_link": {
+    "payment_link_url": "https://pay.hyperswitch.io/payment_link/pay_abc123",
+    "expiry": "2024-03-31T12:00:00Z"
+  }
+}
+```
+
+Share the `payment_link_url` with your customer. When they open it, they will see the hosted payment page.
+
+---
+
+## Configuration options
+
+### UI configuration
+
+These options can be set inline during payment link creation, or as defaults in the business profile:
+
+| Field | Type | Description |
+|---|---|---|
+| `theme` | string | Primary color as a hex value (e.g., `"#4E6ADD"`). |
+| `logo` | string | URL of the logo displayed in the details section. |
+| `seller_name` | string | Merchant display name shown to the customer. |
+| `sdk_layout` | string | Layout for the payment widget: `"accordion"` or `"tabs"`. Defaults to `"tabs"`. |
+| `display_sdk_only` | boolean | When `true`, renders only the payment widget without the details section. |
+| `enabled_saved_payment_method` | boolean | Allow customers to save and reuse payment methods. Only available for secure payment links. |
+| `hide_card_nickname_field` | boolean | Hide the card nickname input when saving a card. |
+| `show_card_form_by_default` | boolean | Show the card form immediately when the link is opened. |
+| `payment_button_text` | string | Custom label for the payment button. Defaults to `"Pay Now"`. |
+| `transaction_details` | array | Key-value pairs displayed in the details section. Each entry can have `key`, `value`, and `ui_configuration` (with `position`, `is_key_bold`, `is_value_bold`). |
+| `background_image` | object | Background image config for the details section: `url`, `position` (`"top"`, `"bottom"`, `"center"`), `size` (`"cover"`, `"contain"`). |
+
+### Business profile-level configuration
+
+These settings can only be configured at the profile level and are not overridable per payment link:
+
+| Field | Type | Description |
+|---|---|---|
+| `domain_name` | string | Custom domain for hosting payment links (e.g., `"pay.example.com"`). Requires DNS setup. |
+| `business_specific_configs` | object | A map of style IDs to UI config objects, for multi-brand or multi-product setups. |
+| `allowed_domains` | array | Domains where secure payment links can be embedded in an iframe (e.g., `["app.example.com"]`). |
+| `branding_visibility` | boolean | Whether the Hyperswitch branding badge is visible. Defaults to `true`. |
+
+### Default values
+
+If you create a payment link without providing any configuration, these defaults apply:
+
+```json
+{
+  "theme": "#212E46",
+  "sdk_layout": "tabs",
+  "display_sdk_only": false,
+  "enabled_saved_payment_method": false,
+  "hide_card_nickname_field": false,
+  "show_card_form_by_default": true,
+  "payment_button_text": "Pay Now"
+}
+```
+
+---
+
+## Setting profile-level defaults
+
+Configure defaults for all payment links created under a profile using the business profile update API:
+
+```bash
+curl --location 'https://sandbox.hyperswitch.io/account/MERCHANT_ID/business_profile/PROFILE_ID' \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: YOUR_ADMIN_API_KEY' \
+  --data '{
+    "payment_link_config": {
+      "theme": "#4E6ADD",
+      "logo": "https://example.com/logo.png",
+      "seller_name": "Example Store",
+      "sdk_layout": "accordion",
+      "display_sdk_only": false,
+      "enabled_saved_payment_method": true,
+      "payment_button_text": "Complete payment",
+      "business_specific_configs": {
+        "style1": {
+          "theme": "#3B845E",
+          "logo": "https://example.com/logo-green.png",
+          "seller_name": "Example Store (Green)",
+          "display_sdk_only": true
+        },
+        "style2": {
+          "theme": "#B202FF",
+          "logo": "https://example.com/logo-purple.png",
+          "seller_name": "Example Store (Purple)",
+          "enabled_saved_payment_method": true
+        }
+      },
+      "allowed_domains": ["app.example.com", "checkout.example.com"],
+      "domain_name": "pay.example.com",
+      "branding_visibility": false
+    }
+  }'
+```
+
+---
+
+## Custom domain
+
+You can host payment links on your own domain (e.g., `pay.example.com`) instead of the default Hyperswitch domain.
+
+<Warning>
+  Setting up a custom domain requires adding CNAME DNS records and TLS certificate provisioning. Contact [Hyperswitch support](https://join.slack.com/t/hyperswitch-io/shared_invite/zt-2wpd0of0y-j61LQxcOsUEAeNMgFnSmxg) to enable this for your account before setting `domain_name` in the profile config.
+</Warning>
+
+---
+
+## Tracking payment status
+
+Use webhooks or the Payments Retrieve API to track whether a customer has completed payment on a link.
+
+```bash
+curl --location 'https://sandbox.hyperswitch.io/payments/pay_abc123' \
+  --header 'api-key: YOUR_API_KEY'
+```
+
+The `status` field in the response reflects the payment state:
+
+| Status | Description |
+|---|---|
+| `requires_payment_method` | The link has been opened but payment has not been attempted. |
+| `processing` | Payment is being processed. |
+| `succeeded` | Payment completed successfully. |
+| `failed` | Payment attempt failed. |
+| `cancelled` | Payment was cancelled. |
+
+---
+
+## FAQ
+
+<AccordionGroup>
+  <Accordion title="How long is a payment link valid?">
+    Payment links expire after 15 minutes by default. You can extend expiry to up to 3 months (7,890,000 seconds) by passing `session_expiry` (in seconds) in the create payment request.
+  </Accordion>
+  <Accordion title="Can I use my own domain for payment links?">
+    Yes. Set a `domain_name` in your business profile configuration. This requires DNS CNAME setup and TLS provisioning — contact Hyperswitch support to get started.
+  </Accordion>
+  <Accordion title="Can I create a static link that works for multiple customers?">
+    No. Each payment link is tied to a single payment intent and can only be used once. This is by design to ensure payment amounts and metadata are accurate.
+  </Accordion>
+  <Accordion title="Can I send payment links by email?">
+    Hyperswitch generates the link but does not integrate with email providers. You will need to integrate with your own email or SMS service and include the `payment_link_url` in the message.
+  </Accordion>
+  <Accordion title="Can I embed a payment link in an iframe?">
+    Yes, but only for secure payment links. Add the embedding domain to the `allowed_domains` array in your business profile configuration.
+  </Accordion>
+</AccordionGroup>

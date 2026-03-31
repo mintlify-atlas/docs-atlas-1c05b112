@@ -1,0 +1,188 @@
+---
+title: "Run Locally with Docker"
+description: "Spin up the full Hyperswitch stack on your local machine using a single setup script. Includes the App Server, Control Center, Web SDK, and Card Vault."
+---
+
+The Docker setup runs all Hyperswitch components locally using Docker Compose. This is the recommended path for developers who want full control over their environment, need to inspect logs, or are contributing to the project.
+
+The setup script launches:
+
+- **App Server** — the core Hyperswitch backend (Rust)
+- **Control Center** — the management UI at `http://localhost:9000`
+- **Web SDK** — the frontend payment SDK at `http://localhost:9090`
+- **Card Vault (Locker)** — secure storage for payment credentials
+- **PostgreSQL** and **Redis** — required infrastructure services
+
+## Prerequisites
+
+<CardGroup cols={2}>
+  <Card title="Docker Desktop" icon="docker">
+    Required for macOS and Windows. Download from [docs.docker.com/get-docker](https://docs.docker.com/get-docker/).
+
+    On Linux, install Docker Engine directly. Docker Compose is included with Docker Desktop and with Docker Engine v2+.
+  </Card>
+  <Card title="Git" icon="code-branch">
+    Required to clone the Hyperswitch repository. Download from [git-scm.com](https://git-scm.com/).
+  </Card>
+</CardGroup>
+
+<Note>
+  You can also use [Podman](https://podman.io/) or [OrbStack](https://orbstack.dev/) (macOS) as alternatives to Docker Desktop.
+</Note>
+
+Ensure Docker is running before proceeding. On macOS and Windows, launch the Docker Desktop application. On Linux, start the Docker daemon with `sudo systemctl start docker`.
+
+## Set up the local stack
+
+<Steps>
+  <Step title="Clone the Hyperswitch repository">
+    Clone the latest stable release using a shallow clone to minimize download size:
+
+    ```bash
+    git clone --depth 1 --branch latest https://github.com/juspay/hyperswitch
+    cd hyperswitch
+    ```
+  </Step>
+
+  <Step title="Run the setup script">
+    From the `hyperswitch` directory, run:
+
+    ```bash
+    scripts/setup.sh
+    ```
+
+    The script performs the following automatically:
+
+    1. Checks that Docker Compose (or Podman) is available
+    2. Generates required configuration files for PostgreSQL and Redis
+    3. Prompts you to select a setup option
+    4. Starts all selected services
+    5. Prints URLs for each running component
+
+    When prompted, select your preferred setup:
+
+    | Option | Components | Recommended for |
+    |---|---|---|
+    | **Standard** | App Server + Control Center + Web SDK | Most developers |
+    | **Full** | Standard + Monitoring + Scheduler | Teams needing observability |
+    | **Standalone App Server** | App Server only | API-first integrations |
+
+    For most use cases, choose **Standard**.
+
+    <Tip>
+      The first run downloads Docker images and may take several minutes depending on your network speed. Subsequent runs start in seconds.
+    </Tip>
+  </Step>
+
+  <Step title="Verify the services are running">
+    Once the script completes, verify all containers are up:
+
+    ```bash
+    docker compose ps
+    ```
+
+    You should see all containers with a status of `running` or `Up`.
+
+    The script also prints direct access URLs. You can access each component at:
+
+    | Component | URL |
+    |---|---|
+    | Control Center | `http://localhost:9000` |
+    | Web SDK playground | `http://localhost:5252` |
+    | App Server (API) | `http://localhost:8080` |
+
+    Open `http://localhost:9000` in your browser to confirm the Control Center is loading.
+  </Step>
+
+  <Step title="Log in to the Control Center">
+    Navigate to `http://localhost:9000` in your browser.
+
+    Click **Sign Up** on the landing page. Enter your email address and a password to create a local account. This creates a user and a merchant account automatically within your local instance.
+
+    <Note>
+      Your local instance is entirely self-contained. Credentials you create here are stored in your local PostgreSQL container and do not sync with app.hyperswitch.io or any external service.
+    </Note>
+  </Step>
+
+  <Step title="Create an API key">
+    From the left navigation bar in the Control Center, go to **Developers → Keys**.
+
+    Click **Create API Key**, enter a description, set an expiration date, and click **Next**. Copy the API key immediately — it is only shown once.
+
+    You will also see your **Publishable Key** on this page. Note both values; you will need them to authenticate API requests and initialize the Web SDK.
+  </Step>
+
+  <Step title="Connect a test processor">
+    From the left navigation bar, go to **Connectors → Payment Processors**.
+
+    Click on **fauxpay** (a built-in dummy processor) and click **Connect**. No external credentials are required — the dummy processor is fully self-contained and always returns successful payments in test mode.
+
+    If you want to test with a real sandbox processor such as Stripe, enter your `sk_test_` API key when prompted.
+  </Step>
+</Steps>
+
+## Verify the setup with a test payment
+
+Navigate to **Home** in the Control Center and click **Try it out**. Enter the following test card details and click **Pay**:
+
+```
+Card number:  4242 4242 4242 4242
+Expiry date:  Any future date (e.g. 12/26)
+CVC:          Any 3 digits (e.g. 123)
+```
+
+A success screen confirms that the full stack — App Server, Control Center, and Web SDK — is working correctly end-to-end.
+
+## Stop and restart the stack
+
+To stop all running containers:
+
+```bash
+docker compose down
+```
+
+To restart later, run `scripts/setup.sh` again from the `hyperswitch` directory or use:
+
+```bash
+docker compose up -d
+```
+
+## Viewing logs
+
+To stream logs from all containers:
+
+```bash
+docker compose logs -f
+```
+
+To view logs for a specific service (for example, the App Server):
+
+```bash
+docker compose logs -f hyperswitch-server
+```
+
+## Contributing to Hyperswitch
+
+If you are setting up Hyperswitch to contribute code, use the development environment setup instead:
+
+```bash
+# See the development setup guide in the repository
+cat docs/try_local_system.md
+```
+
+The development setup uses Docker Compose with hot-reload and additional tooling suited for active development.
+
+<Note>
+  Join the [Hyperswitch Slack community](https://join.slack.com/t/hyperswitch-io/shared_invite/zt-2jqxmpsbm-WXUENx022HjNEy~Ark7Orw) if you run into issues during setup. You can also open an issue on [GitHub](https://github.com/juspay/hyperswitch).
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Your First Payment" icon="credit-card" href="/quickstart/first-payment">
+    Test a payment via the Control Center, Postman, or the API directly.
+  </Card>
+  <Card title="Cloud Sandbox" icon="cloud" href="/quickstart/cloud-sandbox">
+    Use the hosted sandbox at app.hyperswitch.io instead of running locally.
+  </Card>
+</CardGroup>

@@ -1,0 +1,235 @@
+---
+title: "Going live"
+description: "Production readiness checklists for both SaaS and self-hosted Hyperswitch deployments."
+---
+
+Before you start accepting real payments, complete the checklist that matches your deployment model. SaaS customers and self-hosted operators have different requirements — choose the path below that applies to you.
+
+<CardGroup cols={2}>
+  <Card title="SaaS setup" icon="cloud" href="#saas-setup">
+    You use Hyperswitch at app.hyperswitch.io. Juspay manages your infrastructure and PCI compliance.
+  </Card>
+  <Card title="On-prem / self-hosted" icon="server" href="#on-prem-setup">
+    You deployed Hyperswitch on your own AWS account or Kubernetes cluster. You own the infrastructure.
+  </Card>
+</CardGroup>
+
+---
+
+## SaaS setup
+
+Use this checklist to go live on the Hyperswitch managed platform (app.hyperswitch.io).
+
+<Note>
+  Connector configurations set up in your sandbox account are not automatically copied to production. You must recreate them on your production account.
+</Note>
+
+<Steps>
+  <Step title="Sign the Hyperswitch services agreement">
+    Ensure the Hyperswitch services agreement is signed and shared with the Hyperswitch team. Contact [hyperswitch@juspay.in](mailto:hyperswitch@juspay.in) if you need assistance.
+
+    Once this step is complete, the Hyperswitch team will share your production credentials.
+
+    <Tip>
+      If you are using the Hyperswitch SDK for checkout, PCI compliance is automatically handled for you.
+    </Tip>
+  </Step>
+
+  <Step title="Configure production connectors">
+    In your production dashboard:
+
+    - Add all required connectors using **production API credentials** (not sandbox keys)
+    - Enable the payment methods you want to accept on each connector
+    - Enable raw card processing for each connector — some processors require you to share a PCI Attestation of Compliance (AOC) over email to activate this
+
+    To download your AOC document, go to **Settings → Compliance** in the Hyperswitch Dashboard.
+  </Step>
+
+  <Step title="Secure your API keys">
+    - Ensure your secret API key is **never exposed in frontend code** (website or mobile app)
+    - Store API keys in a secrets manager, not in environment files committed to version control
+    - Do not duplicate or store API keys in multiple locations
+  </Step>
+
+  <Step title="Set up webhooks">
+    1. Configure your webhook endpoint URL in the Hyperswitch Dashboard to receive payment event notifications
+    2. Update the Hyperswitch webhook endpoint URL in each connector's dashboard
+    3. Set the connector secret key in the Hyperswitch Dashboard so Hyperswitch can authenticate webhooks from the connector
+  </Step>
+
+  <Step title="Secure your payments">
+    - Decrypt and verify the signed payload sent with the payment status in your return URL
+    - Always verify the payment **amount** and **status** server-side before fulfilling an order or service request — never rely on client-side data alone
+  </Step>
+
+  <Step title="Handle error scenarios">
+    Verify your integration handles the full payments lifecycle:
+
+    - All API error codes ([error codes reference](https://juspay-78.mintlify.app/essentials/error_codes))
+    - All SDK error scenarios for Unified Checkout
+    - Edge cases such as authentication failures, processor timeouts, and declined cards
+
+    Test with real payment details in production mode before announcing availability to customers.
+  </Step>
+
+  <Step title="Review the checkout experience">
+    - Confirm the pay button is clearly visible and correctly labeled
+    - Apply your brand's colors and fonts using the [Unified Checkout styling APIs](https://hyperswitch.io/docs/sdkIntegrations/unifiedCheckoutWeb/customization) for a consistent payment experience
+  </Step>
+</Steps>
+
+---
+
+## On-prem setup
+
+Use this checklist if you self-host Hyperswitch on AWS, Kubernetes, or your own infrastructure.
+
+### Prerequisites
+
+Before going live, confirm you have the following in place:
+
+| Requirement | Notes |
+|---|---|
+| Cloud or on-premises infrastructure | AWS, GCP, Azure, or own hardware |
+| Payment processor agreement | Active processing account with API credentials from each processor |
+| Kubernetes expertise | Team capable of deploying and managing K8s workloads |
+| PCI compliance path | See [PCI compliance](#pci-compliance) below |
+
+<Steps>
+  <Step title="Harden security">
+    - Do not expose the Hyperswitch App Server directly to the internet — place a **reverse proxy or load balancer** in front of it
+    - Route all **outbound traffic** from the App Server through an outgoing proxy for monitoring and control
+    - Place a **WAF with rate-limiting** and DDoS protection in front of the incoming proxy before traffic reaches the Kubernetes cluster
+    - Follow the [security guidelines](https://docs.hyperswitch.io/production-deployment/going-live/for-on-prem-setup/security) for each component in your stack
+  </Step>
+
+  <Step title="Rotate all default secrets">
+    Before your first production deployment, change every default value in the Helm chart secrets. Defaults are publicly documented and must not be used in production.
+
+    Key secrets to rotate:
+    - Admin API key
+    - Database password
+    - Redis authentication token
+    - JWT signing secret
+    - Apple Pay merchant certificate (if accepting Apple Pay)
+
+    See the [App Server secrets reference](https://github.com/juspay/hyperswitch-helm/tree/main/charts/incubator/hyperswitch-stack#app-server-secrets) for the complete list.
+  </Step>
+
+  <Step title="Activate the card vault">
+    If you deployed the card vault (Hyperswitch Locker), activate it using the two custodian keys generated during installation:
+
+    ```bash
+    curl -X POST https://<locker-url>/custodian/key1 \
+      -H "Content-Type: application/json" \
+      -d '{"key": "<custodian-key-1>"}'
+
+    curl -X POST https://<locker-url>/custodian/key2 \
+      -H "Content-Type: application/json" \
+      -d '{"key": "<custodian-key-2>"}'
+    ```
+
+    The locker will not accept card data until both custodian keys are submitted.
+  </Step>
+
+  <Step title="Set up monitoring and logging">
+    The Hyperswitch Helm chart deploys Promtail, Loki, OpenTelemetry Collector, and Grafana automatically. After deployment:
+
+    - Verify logs are being collected for all components
+    - Import the pre-built Grafana dashboard JSON files included in the Helm chart
+    - Configure alert thresholds:
+
+    | Condition | Recommended severity |
+    |---|---|
+    | CPU or memory > 80% | Sev 1 |
+    | CPU or memory > 70% | Sev 2 |
+    | 5xx API responses | Sev 1 |
+    | Authorization success rate drop > 30% | Sev 1 |
+    | Authorization success rate drop > 20% | Sev 2 |
+
+    Enable log retention policies in accordance with your PCI DSS obligations. Logs must be encrypted at rest and in transit with access restricted to authorized personnel only.
+  </Step>
+
+  <Step title="Configure connectors with production credentials">
+    - Add all required connectors in the Hyperswitch Dashboard using **production credentials**
+    - Enable the required payment methods on each connector
+    - Enable raw card processing per connector — some processors require a PCI AOC document sent over email
+
+    Download your AOC document from **Settings → Compliance** in the Hyperswitch Dashboard, or email [hyperswitch@juspay.in](mailto:hyperswitch@juspay.in).
+  </Step>
+
+  <Step title="Secure your API keys">
+    - Ensure your secret API key is never exposed in frontend code
+    - Store secrets in a secrets management system (HashiCorp Vault, AWS Secrets Manager, etc.)
+    - Do not commit API keys to version control or duplicate them across services
+  </Step>
+
+  <Step title="Configure webhooks">
+    1. Set your webhook endpoint URL in the Hyperswitch Dashboard
+    2. Update the Hyperswitch webhook URL in each connected processor's dashboard
+    3. Set the connector webhook secret key in the Hyperswitch Dashboard
+  </Step>
+
+  <Step title="Verify application error handling">
+    - Test all payment lifecycle states with real payment details in your production environment
+    - Confirm your integration handles all [API error codes](https://juspay-78.mintlify.app/essentials/error_codes) and SDK error scenarios
+    - Review the [payment state machine diagrams](https://docs.hyperswitch.io/learn-more/payment-flows) to ensure no state transitions are unhandled
+  </Step>
+
+  <Step title="Run load testing before go-live">
+    Validate your deployment can handle expected peak traffic before accepting real payments. Use the Hyperswitch load test script:
+
+    ```bash
+    git clone https://github.com/juspay/hyperswitch-suite.git
+    cd hyperswitch-suite/load-test
+    bash setup.sh
+    ```
+
+    The script prompts for your Hyperswitch server URL and Admin API key. After the run, a report is generated at `output/report.pdf`.
+
+    <Tip>
+      Also run chaos testing by stopping dependent services (Token service, Consumer, Producer, analytics stack) to verify the Router continues processing payments without customer-facing impact.
+    </Tip>
+  </Step>
+
+  <Step title="Keep your installation up to date">
+    Hyperswitch publishes stable monthly releases at [github.com/juspay/hyperswitch-suite/releases](https://github.com/juspay/hyperswitch-suite/releases). Each release includes:
+
+    - New features and bug fixes
+    - Database migration scripts
+    - Breaking change notices
+
+    Update your Helm deployment to stay on a supported release:
+
+    ```bash
+    helm repo update
+    helm upgrade hypers-v1 hyperswitch/hyperswitch-stack -n hyperswitch
+    ```
+
+    <Warning>
+      Do not use nightly builds in production. Only use releases listed on the releases page.
+    </Warning>
+  </Step>
+</Steps>
+
+---
+
+## PCI compliance
+
+PCI compliance requirements depend on your transaction volume and deployment model.
+
+| Setup | Compliance path |
+|---|---|
+| SaaS | Handled by Juspay — no action required from you |
+| Self-hosted + Hyperswitch SDK | Reduced scope — see SAQ details below |
+| Self-hosted + custom card collection | Full PCI scope — engage a QSA |
+
+**Self-Assessment Questionnaire (SAQ):** Required if your business processes fewer than 1 million card transactions per year. A person responsible for the payment infrastructure completes this assessment without engaging an external auditor.
+
+**Report on Compliance (ROC):** Required if your business processes more than 1 million card transactions per year. Engage a [PCI Security Standards Council Qualified Security Assessor (QSA)](https://listings.pcisecuritystandards.org/assessors_and_solutions/qualified_security_assessors) to conduct the audit.
+
+**Quarterly network scans:** Engage an [Approved Scanning Vendor (ASV)](https://listings.pcisecuritystandards.org/assessors_and_solutions/approved_scanning_vendors) to run quarterly network scans and submit results to your acquirer.
+
+<Note>
+  The Hyperswitch App Server is listed on the [PCI SSC List of Validated Payment Software](https://listings.pcisecuritystandards.org/assessors_and_solutions/payment_software) as "Hyperswitch, Version 1.x". Using the validated version simplifies your PCI audit scope.
+</Note>

@@ -1,0 +1,245 @@
+---
+title: "Deploy on AWS"
+description: "Deploy the full Hyperswitch stack on AWS using the CDK script (recommended) or component-by-component."
+---
+
+Hyperswitch provides two paths for deploying on AWS. The **CloudFormation / CDK approach** provisions everything with a single script and is the fastest way to get a full production-capable stack running. The **component-wise approach** lets you integrate individual Hyperswitch services into an existing AWS environment.
+
+<Tabs>
+  <Tab title="CloudFormation (recommended)">
+
+## Deploy with AWS CDK
+
+The Hyperswitch CDK script creates a complete stack in your AWS account including an EKS cluster, RDS (PostgreSQL), ElastiCache (Redis), load balancers, and all Hyperswitch services.
+
+### Prerequisites
+
+Before you start, make sure you have:
+
+- `git` installed on your local machine
+- Node.js version 18 or later
+- An AWS user account with **AdministratorAccess** (see below if you need to create one)
+
+### Step 1 — Set up an AWS user with admin access
+
+If you already have an AWS user with `AdministratorAccess`, skip to Step 2.
+
+<Steps>
+  <Step title="Create an IAM user">
+    1. Go to the [IAM console](https://console.aws.amazon.com/iam/)
+    2. Click **Users** → **Add users**
+    3. Set the username to `hyperswitch`
+  </Step>
+  <Step title="Attach permissions">
+    Choose **Attach policies directly**, search for `AdministratorAccess`, and select it.
+  </Step>
+  <Step title="Save access credentials">
+    After creating the user, navigate to **Security credentials** → **Access keys** → **Create access key**. Choose **Command Line Interface (CLI)** and download or copy the Access Key ID and Secret Access Key.
+
+    <Warning>
+      You cannot view the Secret Access Key again after leaving this screen. Store it in a password manager before continuing.
+    </Warning>
+  </Step>
+</Steps>
+
+### Step 2 — Configure AWS credentials
+
+Export your credentials in the terminal session where you will run the deployment:
+
+```bash
+export AWS_DEFAULT_REGION=<your-region>        # e.g. us-east-2
+export AWS_ACCESS_KEY_ID=<your-access-key-id>
+export AWS_SECRET_ACCESS_KEY=<your-secret-key>
+export AWS_SESSION_TOKEN="<your-session-token>" # only if MFA is enabled
+```
+
+### Step 3 — Deploy the stack
+
+```bash
+git clone https://github.com/juspay/hyperswitch-cdk.git
+cd hyperswitch-cdk
+bash install.sh
+```
+
+The script prompts you for:
+
+1. **DB password** — must be more than 8 characters
+2. **Admin API key** — generate one from the [Hyperswitch Dashboard](https://app.hyperswitch.io/dashboard/developer-api-keys)
+3. **Card vault master key** *(optional)* — if you opt into the card vault service, the terminal displays the command to generate a master key; note down the two custodian keys shown
+4. **Locker DB password** *(optional)* — only if you enabled the card vault
+
+<Warning>
+  Save all passwords you enter during the script. You cannot recover them later.
+</Warning>
+
+### What gets deployed
+
+The script provisions the following in a new CloudFormation stack in your AWS account:
+
+| Component | Instance type | Default config |
+|---|---|---|
+| EKS cluster | — | 1 cluster, 2 nodes |
+| EC2 worker nodes | t3.medium | 3 instances |
+| RDS (Aurora PostgreSQL) | t4g.medium | 2 cluster nodes |
+| ElastiCache (Redis) | t4g.medium | 1 cluster |
+| Application Load Balancers | — | 4 load balancers |
+
+The following Kubernetes services run across the EKS nodes:
+
+| Service | Pods |
+|---|---|
+| Hyperswitch App Server | 3 |
+| Scheduler Producer | 1 |
+| Scheduler Consumer | 1 |
+| Control Center | 1 |
+| Grafana | 1 |
+| Loki | 1 |
+| Promtail | DaemonSet (one per node) |
+| Demo Store | 1 |
+
+### Outputs
+
+After successful deployment, the script prints the following URLs:
+
+| Output | Purpose |
+|---|---|
+| App Server hostname | Base URL for all Hyperswitch API calls |
+| Control Center URL | Access the no-code management dashboard |
+| HyperLoader.js URL | Embed the Web SDK in your frontend |
+| Demo Store URL | Make a test payment immediately |
+| Log Server hostname | View real-time logs |
+| Locker URL | Access the card vault API |
+
+### Activate the card vault
+
+If you deployed the card vault, activate it using the two custodian keys printed during deployment:
+
+```bash
+# The locker URL was printed in the deployment output
+curl -X POST https://<locker-url>/custodian/key1 \
+  -H "Content-Type: application/json" \
+  -d '{"key": "<custodian-key-1>"}'
+
+curl -X POST https://<locker-url>/custodian/key2 \
+  -H "Content-Type: application/json" \
+  -d '{"key": "<custodian-key-2>"}'
+```
+
+See the [API reference](https://api-reference.hyperswitch.io/api-reference/key-custodian/unlock-the-locker) for the exact unlock endpoint.
+
+### Estimated monthly cost
+
+Based on 1,000 transactions per day (720 hours/month):
+
+| Component | Est. cost (USD/month) |
+|---|---|
+| EKS | $73 |
+| EC2 (3 × t3.medium) | $45 |
+| Aurora PostgreSQL | $60 |
+| ElastiCache | $12 |
+| Load Balancers (4) | $66 |
+| S3 | $1 |
+| **Total** | **~$257** |
+
+### Tear down the stack
+
+To remove all AWS resources provisioned by the CDK:
+
+```bash
+cdk destroy -c aws_arn=$(aws sts get-caller-identity --query Arn --output text)
+```
+
+Type `y` when prompted. This removes the EKS cluster, VPC, IAM roles, and all other resources created by the script.
+
+To verify everything was removed:
+
+```bash
+aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE
+```
+
+If the CDK Toolkit stack remains:
+
+```bash
+aws cloudformation delete-stack --stack-name CDKToolkit
+```
+
+  </Tab>
+  <Tab title="Component-wise">
+
+## Component-wise deployment
+
+Use this approach to deploy individual Hyperswitch services into an existing AWS environment. Each component is available as a Docker image and can be run on ECS, EKS, or EC2.
+
+### Components
+
+<CardGroup cols={2}>
+  <Card title="App Server" icon="server">
+    The core payment engine. Requires PostgreSQL, Redis, and outbound internet access to reach payment processors.
+  </Card>
+  <Card title="Control Center" icon="gauge">
+    The management dashboard. A static single-page application served from S3 + CloudFront or any web server.
+  </Card>
+  <Card title="Web SDK" icon="code">
+    The frontend checkout SDK (HyperLoader.js). Served as a static JS file from S3 + CloudFront or a CDN.
+  </Card>
+  <Card title="Card Vault" icon="vault">
+    The PCI-compliant card storage service. Requires its own isolated PostgreSQL database and must be deployed in a network segment isolated from the main application.
+  </Card>
+</CardGroup>
+
+### Infrastructure requirements
+
+All components require:
+
+- **PostgreSQL 14.x** — use Amazon RDS with the `t4g.medium` instance type or larger
+- **Redis 7.x** — use Amazon ElastiCache (Redis cluster mode)
+- **EKS or ECS** — for running containerized services
+
+Recommended minimum (for 40 RPS / ~10 TPS):
+
+| Resource | Spec |
+|---|---|
+| Kubernetes cluster | 2 nodes, 4 vCPU, 16 GB RAM each |
+| RDS (writer) | 2 vCPU, 8 GB RAM, 1 TB storage |
+| ElastiCache | 1 vCPU, 4 GB RAM |
+
+### App Server configuration
+
+Key environment variables for the App Server:
+
+```bash
+# Database
+DATABASE_URL=postgres://<user>:<password>@<rds-host>:5432/hyperswitch
+
+# Redis
+REDIS_HOST=<elasticache-host>
+REDIS_PORT=6379
+
+# Admin API key (set on first deployment)
+ADMIN_API_KEY=<your-admin-key>
+
+# Card vault (optional)
+LOCKER_HOST=https://<locker-service-host>
+```
+
+Replace all default API key values defined in the Helm chart secrets before deploying to production. See the [hyperswitch-helm repository](https://github.com/juspay/hyperswitch-helm/tree/main/charts/incubator/hyperswitch-stack#app-server-secrets) for the complete list of secrets to rotate.
+
+### Networking
+
+Place the App Server behind an **Application Load Balancer** with HTTPS termination. Route all outbound traffic from the App Server through an **outgoing proxy** for monitoring and control. Add a **WAF and rate-limiting layer** (AWS WAF + Shield) in front of the ALB to filter incoming traffic.
+
+  </Tab>
+</Tabs>
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Going live checklist" icon="rocket" href="/deployment/going-live">
+    Complete the production readiness checklist before accepting real payments.
+  </Card>
+  <Card title="Deploy on Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+    Prefer Kubernetes? Use Helm charts to deploy on GCP, Azure, or any cluster.
+  </Card>
+</CardGroup>

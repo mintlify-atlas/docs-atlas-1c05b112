@@ -1,0 +1,383 @@
+---
+title: "iOS SDK"
+description: "Integrate the Hyperswitch payment sheet into your iOS app using Swift or SwiftUI. Supports cards, wallets, buy now pay later, and local payment methods."
+---
+
+The Hyperswitch iOS SDK renders a native payment sheet inside your app. It handles PCI-compliant card input, Apple Pay, 3DS authentication, and payment confirmation — with a minimal integration surface for Swift and SwiftUI apps.
+
+## Requirements
+
+- iOS 15.1 and above
+- CocoaPods
+- npm (for the node peer dependency used by the SDK)
+
+---
+
+## Integration
+
+<Steps>
+
+<Step title="Install via CocoaPods">
+
+If you haven't already initialized CocoaPods in your project, run:
+
+```bash
+pod init
+```
+
+Add the Hyperswitch SDK to your `Podfile`:
+
+```ruby
+target 'YourApp' do
+  pod 'hyperswitch-sdk-ios'
+end
+```
+
+Install the dependency:
+
+```bash
+pod install
+```
+
+<Note>
+  After running `pod install`, always open your project using the `.xcworkspace` file, not `.xcodeproj`.
+</Note>
+
+To update to the latest SDK version later:
+
+```bash
+pod install --repo-update
+```
+
+</Step>
+
+<Step title="Create a payment intent on your server">
+
+Your server calls the Hyperswitch Payments API and returns the `client_secret` to your app. Never embed your secret API key in the app binary.
+
+```js
+// Example server-side route (Node.js / Express)
+app.post("/create-payment", async (req, res) => {
+  const payment = await fetch("https://sandbox.hyperswitch.io/payments", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.HYPERSWITCH_API_KEY,
+    },
+    body: JSON.stringify({ amount: 1000, currency: "USD", confirm: false }),
+  }).then((r) => r.json());
+
+  res.json({ clientSecret: payment.client_secret });
+});
+```
+
+</Step>
+
+<Step title="Initialize PaymentSession">
+
+Import the SDK and create a `PaymentSession` using your publishable key. For a self-hosted setup, also provide your backend and log URLs.
+
+<Tabs>
+  <Tab title="Swift">
+
+```swift
+import Hyperswitch
+
+class CheckoutViewController: UIViewController {
+
+    var paymentSession: PaymentSession?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        paymentSession = PaymentSession(publishableKey: "YOUR_PUBLISHABLE_KEY")
+
+        // For a self-hosted / open-source setup:
+        // paymentSession = PaymentSession(
+        //     publishableKey: "YOUR_PUBLISHABLE_KEY",
+        //     customBackendUrl: "YOUR_SERVER_URL",
+        //     customLogUrl: "YOUR_LOG_URL"
+        // )
+
+        fetchAndInitializePayment()
+    }
+}
+```
+
+  </Tab>
+  <Tab title="SwiftUI">
+
+```swift
+import Hyperswitch
+import SwiftUI
+
+class BackendModel: ObservableObject {
+    @Published var paymentSession: PaymentSession?
+    @Published var paymentResult: PaymentSheetResult?
+
+    func preparePaymentSheet() {
+        // Fetch client secret from your server
+        let clientSecret = fetchClientSecretFromServer()
+
+        paymentSession = PaymentSession(publishableKey: "YOUR_PUBLISHABLE_KEY")
+        paymentSession?.initPaymentSession(paymentIntentClientSecret: clientSecret)
+    }
+
+    func onPaymentCompletion(result: PaymentSheetResult) {
+        DispatchQueue.main.async {
+            self.paymentResult = result
+        }
+    }
+
+    private func fetchClientSecretFromServer() -> String {
+        // Implement your network request here
+        return ""
+    }
+}
+```
+
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Fetch a payment intent and initialize the session">
+
+Request a payment intent from your server, then pass the `clientSecret` to `initPaymentSession`.
+
+<Tabs>
+  <Tab title="Swift">
+
+```swift
+func fetchAndInitializePayment() {
+    // Replace with a real network call to /create-payment
+    let clientSecret = fetchClientSecretFromServer()
+    paymentSession?.initPaymentSession(paymentIntentClientSecret: clientSecret)
+}
+```
+
+  </Tab>
+  <Tab title="SwiftUI">
+
+```swift
+// Called from .onAppear in your view
+model.preparePaymentSheet()
+```
+
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Present the payment sheet">
+
+When the customer taps the payment button, configure the payment sheet and present it.
+
+<Tabs>
+  <Tab title="Swift">
+
+```swift
+@objc func openPaymentSheet(_ sender: Any) {
+    var configuration = PaymentSheet.Configuration()
+    configuration.merchantDisplayName = "Example, Inc."
+
+    paymentSession?.presentPaymentSheet(
+        viewController: self,
+        configuration: configuration,
+        completion: { result in
+            self.handlePaymentResult(result)
+        }
+    )
+}
+```
+
+  </Tab>
+  <Tab title="SwiftUI">
+
+```swift
+struct CheckoutView: View {
+    @ObservedObject var model = BackendModel()
+
+    func configuration() -> PaymentSheet.Configuration {
+        var config = PaymentSheet.Configuration()
+        config.merchantDisplayName = "Example, Inc."
+        return config
+    }
+
+    var body: some View {
+        VStack {
+            if let paymentSession = model.paymentSession {
+                PaymentSheet.PaymentButton(
+                    paymentSession: paymentSession,
+                    configuration: configuration(),
+                    onCompletion: model.onPaymentCompletion
+                ) {
+                    Text("Pay now")
+                        .padding()
+                        .background(.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                }
+
+                if let result = model.paymentResult {
+                    resultView(result)
+                }
+            }
+        }
+        .onAppear { model.preparePaymentSheet() }
+    }
+
+    @ViewBuilder
+    func resultView(_ result: PaymentSheetResult) -> some View {
+        switch result {
+        case .completed:
+            Text("Payment complete")
+        case .failed(let error):
+            Text("Payment failed: \(error.domain)")
+        case .canceled:
+            Text("Payment canceled.")
+        }
+    }
+}
+```
+
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Handle the payment result">
+
+<Tabs>
+  <Tab title="Swift">
+
+```swift
+func handlePaymentResult(_ result: PaymentSheetResult) {
+    switch result {
+    case .completed:
+        print("Payment complete")
+        // Always verify the final status server-side
+    case .failed(let error):
+        print("Payment failed: \(error.localizedDescription)")
+    case .canceled:
+        print("Payment canceled.")
+    }
+}
+```
+
+  </Tab>
+  <Tab title="SwiftUI">
+
+The SwiftUI example above handles results inline using the `model.paymentResult` published property.
+
+  </Tab>
+</Tabs>
+
+<Warning>
+  Always retrieve the final payment status from the Hyperswitch backend. The result returned by the SDK callback may not reflect the terminal state of the transaction.
+</Warning>
+
+</Step>
+
+</Steps>
+
+---
+
+## Card element (beta)
+
+For a custom UI that only collects card details without displaying the full payment sheet, use `PaymentCardTextField` directly.
+
+<Tabs>
+  <Tab title="Swift">
+
+```swift
+// Create the card text field and a pay button
+lazy var hyperCardTextField: PaymentCardTextField = {
+    let cardTextField = PaymentCardTextField()
+    return cardTextField
+}()
+
+lazy var payButton: UIButton = {
+    let button = UIButton(type: .custom)
+    button.layer.cornerRadius = 5
+    button.backgroundColor = .systemBlue
+    button.setTitle("Pay", for: .normal)
+    button.addTarget(self, action: #selector(pay), for: .touchUpInside)
+    return button
+}()
+
+@objc func pay() {
+    guard let clientSecret = model.paymentIntentClientSecret else { return }
+
+    let paymentIntentParams = PaymentIntentParams(clientSecret: clientSecret)
+    let paymentHandler = PaymentHandler.shared()
+
+    paymentHandler.confirmPayment(paymentIntentParams, with: self) { status, paymentIntent, error in
+        switch status {
+        case .succeeded:
+            print("Payment succeeded")
+        case .failed:
+            print("Payment failed: \(error?.localizedDescription ?? "")")
+        case .canceled:
+            print("Payment canceled")
+        @unknown default:
+            fatalError()
+        }
+    }
+}
+```
+
+  </Tab>
+  <Tab title="SwiftUI">
+
+```swift
+@ObservedObject var model = BackendModel()
+@State var paymentMethodParams: PaymentMethodParams?
+@State var isConfirmingPayment = false
+
+var body: some View {
+    VStack {
+        PaymentCardTextField.Representable(paymentMethodParams: $paymentMethodParams)
+            .padding()
+
+        if let paymentIntent = model.paymentIntentParams {
+            Button("Buy") {
+                paymentIntent.paymentMethodParams = paymentMethodParams
+                isConfirmingPayment = true
+            }
+            .disabled(isConfirmingPayment || paymentMethodParams == nil)
+            .paymentConfirmationSheet(
+                isConfirmingPayment: $isConfirmingPayment,
+                paymentIntentParams: paymentIntent,
+                onCompletion: model.onCompletion
+            )
+        } else {
+            ProgressView()
+        }
+
+        if let paymentStatus = model.paymentStatus {
+            PaymentHandlerStatusView(
+                actionStatus: paymentStatus,
+                lastPaymentError: model.lastPaymentError
+            )
+        }
+    }
+    .onAppear { model.preparePaymentIntent() }
+}
+```
+
+  </Tab>
+</Tabs>
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configure payment methods" icon="credit-card" href="https://app.hyperswitch.io/dashboard/connectors">
+    Enable connectors and payment methods in the Hyperswitch dashboard.
+  </Card>
+  <Card title="React Native SDK" icon="mobile" href="/checkout/react-native">
+    Integrate the Hyperswitch SDK into a cross-platform React Native app.
+  </Card>
+</CardGroup>

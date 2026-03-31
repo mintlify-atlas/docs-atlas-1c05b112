@@ -1,0 +1,437 @@
+---
+title: "Frequently Asked Questions"
+description: "Answers to common questions about Hyperswitch — from getting started and payment orchestration to cost optimization, integration, and security."
+---
+
+<AccordionGroup>
+
+  {/* ── GENERAL ───────────────────────────────────────────────────────── */}
+
+  <Accordion title="What is Hyperswitch?">
+    Hyperswitch is an open-source payment orchestration platform built by Juspay. It sits as a control layer between your application and multiple payment processors, providing a single unified API across all your providers.
+
+    Juspay processes over 300 million daily transactions with an annualized total payment value exceeding $1 trillion. Hyperswitch brings that same infrastructure to digital businesses of any size.
+
+    Hyperswitch offers two product areas:
+
+    **Payments Suite** — an end-to-end orchestration layer that unifies payments across providers, networks, and channels. Capabilities include unified checkout, dynamic payment routing, retry mechanisms, and payment reliability redundancy.
+
+    **Payment Modules** — a modular set of capabilities that can be integrated individually: intelligent routing, payment vault, reconciliation, cost observability, smart retries, and alternative payment method widgets.
+  </Accordion>
+
+  <Accordion title="What is the open-source license?">
+    Hyperswitch is released under the Apache License 2.0. The source code is available at [github.com/juspay/hyperswitch](https://github.com/juspay/hyperswitch). You can self-host, modify, and extend the platform without licensing fees. Commercial SaaS hosting is available from Juspay for businesses that prefer managed infrastructure.
+  </Accordion>
+
+  <Accordion title="What is the difference between SaaS and self-hosted?">
+    | Factor | SaaS (Hosted) | Self-Hosted |
+    |--------|--------------|-------------|
+    | Infrastructure management | Managed by Juspay | Managed by you |
+    | Setup time | Minutes to hours | Hours to days |
+    | Platform upgrades | Automatic | Your responsibility |
+    | Data residency | Juspay cloud | Your infrastructure |
+    | Customization | Configuration only | Full codebase access |
+    | PCI DSS responsibility | Juspay maintains compliance | You are responsible |
+    | Operational overhead | Low | High |
+    | Cost | Subscription or usage-based | No licensing fee; infrastructure and ops costs apply |
+
+    **SaaS** is the fastest path to accepting payments. Navigate to [app.hyperswitch.io](https://app.hyperswitch.io) to sign up and configure a sandbox environment in minutes.
+
+    **Self-hosted** gives you full control over data residency, infrastructure, and customization. You can deploy using Docker Compose for local development, or Kubernetes with the provided Helm charts and Terraform modules for production.
+  </Accordion>
+
+  <Accordion title="How is Hyperswitch different from a PSP?">
+    Hyperswitch is not a payment service provider. It is a payment orchestrator that sits between you and multiple PSPs.
+
+    | Aspect | PSP | Hyperswitch |
+    |--------|-----|-------------|
+    | Providers | Single payment processor | Multiple processors through one integration |
+    | Vendor lock-in | Processor-specific tokens and infrastructure | Merchant-owned tokens through a neutral vault |
+    | Routing | Limited routing capabilities | Dynamic routing across processors |
+    | Integration | Separate integration per PSP | Unified API across multiple processors |
+    | Operations | Multiple PSP dashboards | Single Control Center for all processors |
+
+    Processors handle the connection to card networks, authorization, and settlement. Hyperswitch determines which processor to use, normalizes their APIs and error codes, and enables cross-PSP reporting and optimization.
+  </Accordion>
+
+  <Accordion title="How do I set up a sandbox environment?">
+    You have three options depending on your workflow:
+
+    **Cloud sandbox** — navigate to [app.hyperswitch.io](https://app.hyperswitch.io), sign up, and you have an immediately ready test environment. The sandbox URL is `sandbox.hyperswitch.io` and sandbox publishable keys start with `pk_snd_`.
+
+    **Local Docker setup** — clone the repository and run the setup script:
+    ```bash
+    git clone --depth 1 --branch latest https://github.com/juspay/hyperswitch
+    cd hyperswitch
+    scripts/setup.sh
+    ```
+    This launches the Hyperswitch backend, Control Center, and SDK frontend locally.
+
+    **Individual component setup** — run the backend, Control Center, and SDK independently for more granular control.
+
+    For testing without real processor credentials, use the **fauxpay** dummy connector, which accepts any test card and always returns a successful payment.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Payment orchestration
+
+<AccordionGroup>
+
+  <Accordion title="How does routing work in Hyperswitch?">
+    Hyperswitch supports five routing strategies, all configurable from the Control Center without any code deployment:
+
+    - **Rule-based routing** — define conditions based on payment method, amount, currency, card network, and customer country. Traffic matching the rule is sent to the specified connector.
+    - **Volume-based routing** — distribute traffic across multiple connectors using percentage-based allocation. Useful for gradual rollouts or A/B testing.
+    - **Elimination routing** — automatically deprioritizes connectors that are experiencing elevated failure rates or downtime.
+    - **Authorization rate based routing** — a Multi-Armed Bandit (MAB) algorithm continuously evaluates processor performance using a sliding window of recent data and routes traffic to the highest-performing connector dynamically.
+    - **Default fallback routing** — if no rule applies, Hyperswitch uses the configured connector priority order.
+
+    Navigate to **Workflow → Routing** in the Control Center to configure rules. Changes take effect immediately.
+  </Accordion>
+
+  <Accordion title="Can I have multiple payment processors configured at the same time?">
+    Yes. You can connect any number of processors and configure routing rules to control how traffic is distributed between them. Each processor (connector) is configured independently under **Connectors → Payment Processors**.
+
+    Adding a new connector does not require changes to your existing integration. Hyperswitch normalizes all connector APIs into its unified interface, so routing traffic to a new processor is purely a configuration change.
+  </Accordion>
+
+  <Accordion title="What happens if a connector fails during a transaction?">
+    When a connector returns a retryable error, Hyperswitch automatically attempts the payment through the next available connector using the same payment session — the customer does not need to re-enter their payment details.
+
+    Three retry types are supported:
+
+    - **Cascading retry** — routes the payment through an alternative processor
+    - **Step-up retry** — retries with 3DS authentication added, used when the original decline was due to suspected fraud
+    - **Network retry** — retries through an alternative debit network where available
+
+    Elimination routing also proactively tracks connector health, deprioritizing connectors with elevated error rates before failures cascade.
+  </Accordion>
+
+  <Accordion title="Can I migrate to Hyperswitch gradually?">
+    Yes. You can run Hyperswitch alongside your existing stack using volume-based routing to send a small percentage of traffic through Hyperswitch initially.
+
+    Common migration strategies:
+
+    - Start with 5–10% of traffic routed through Hyperswitch and increase as you gain confidence
+    - Pilot by geography or BIN range before rolling out globally
+    - Run A/B comparisons across processors to measure authorization rate improvements
+    - Enable instant rollback by adjusting routing percentages in the Control Center
+
+    No code changes are required to adjust routing allocations after the initial integration.
+  </Accordion>
+
+  <Accordion title="What payment methods does Hyperswitch support?">
+    Hyperswitch normalizes payment methods across connectors while preserving connector-specific capabilities. Supported categories include:
+
+    - **Cards** — Visa, Mastercard, Amex, Discover, Diners, and others
+    - **Wallets** — Apple Pay (75+ countries), Google Pay (70+ countries), PayPal, Samsung Pay
+    - **Bank redirects** — iDEAL, Giropay, EPS, and others
+    - **Bank transfers** — ACH, SEPA, BACS, BECS, Multibanco
+    - **Buy now, pay later** — Klarna, Afterpay, Affirm, and others
+
+    The full list of supported payment methods and connectors is available at [juspay.io/integrations](https://juspay.io/integrations).
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Cost and optimization
+
+<AccordionGroup>
+
+  <Accordion title="How does least-cost routing work?">
+    Least-cost routing uses routing rules to direct each transaction to the processor offering the best cost for that specific transaction type.
+
+    Cost-based routing evaluates factors including:
+
+    - Card BIN — domestic versus cross-border classification
+    - Geography — customer and merchant country
+    - Currency — whether FX conversion will apply
+    - Processor markup agreements — different processors may charge materially different markup percentages
+
+    For example, you can configure a rule to route domestic debit transactions to the processor with the lowest markup on that card type, while routing premium rewards cards to a processor that offers better performance or pricing for that segment.
+
+    **Important**: cost-only routing is incomplete without authorization rate data. The net revenue per transaction is `(approval_rate × amount) − processing_fees`. A processor with a 15 basis point lower markup that also has a 2% lower approval rate may cost more overall. Hyperswitch's MAB routing model considers both dimensions.
+  </Accordion>
+
+  <Accordion title="How can I observe and track payment processing costs?">
+    Hyperswitch provides an AI-powered cost observability module that surfaces:
+
+    - Processing fees per connector
+    - Billing discrepancies between expected and actual processor invoices
+    - Invoice mismatches and unexpected fee changes
+    - Cost trends and anomalies over time
+
+    Cost data can also be exported via the S3 data pipeline for finance reporting and integration with BI tools such as Tableau, Looker, or Power BI.
+
+    Navigate to the cost observability section in the Control Center, or see the [cost observability module documentation](https://docs.hyperswitch.io/explore-hyperswitch/payments-modules/ai-powered-cost-observability) for setup details.
+  </Accordion>
+
+  <Accordion title="How do retries affect processing fees?">
+    Each authorization attempt may incur network assessment fees and processor markup. Poorly designed retry logic can significantly increase your fee burden without improving conversion.
+
+    Hyperswitch classifies decline codes into retryable and non-retryable categories. Non-retryable declines — such as `fraudulent`, `stolen_card`, `expired_card`, and `do_not_honor` — are never retried automatically, preventing fee accumulation on transactions that cannot succeed regardless of the connector.
+
+    Retries are only triggered for soft declines where an alternative connector has a reasonable chance of authorizing the transaction.
+  </Accordion>
+
+  <Accordion title="Do multiple processors lower my effective blended rate?">
+    Often, yes — but not automatically. The benefits come from:
+
+    - **Negotiation leverage** — volume split across processors gives you competitive benchmarking data when renegotiating contracts
+    - **Volume reallocation** — direct high-value transaction types to the processor with better pricing for that segment
+    - **Cross-border optimization** — use local acquirers in target markets to reduce cross-border assessment fees and FX spread
+
+    However, evenly splitting volume across processors may weaken volume-based discount tiers. The optimal strategy balances concentration for tiered discounts with diversification for leverage.
+
+    Cross-border effective rates can be 0.9–1.7 percentage points higher than domestic rates. Using local acquiring for international expansion is often one of the highest-impact multi-processor optimizations available.
+  </Accordion>
+
+  <Accordion title="What transaction fees does Hyperswitch charge?">
+    Hyperswitch itself does not add per-transaction fees on top of processor charges for the open-source self-hosted deployment. You pay your existing processor rates directly.
+
+    For SaaS hosted deployments, pricing is subscription or usage-based. Contact [Juspay](https://hyperswitch.io) for current pricing.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Integration
+
+<AccordionGroup>
+
+  <Accordion title="How long does it take to integrate Hyperswitch?">
+    A basic integration — creating payments, initializing the Web SDK, and handling webhook events — typically takes one to three days for a developer familiar with REST APIs.
+
+    A full production integration including multiple connectors, routing configuration, smart retries, and webhook handling typically takes one to two weeks.
+
+    The implementation path is:
+
+    1. Integrate with the Payments API (server-side `POST /payments`)
+    2. Initialize the Web or mobile SDK with the `client_secret`
+    3. Configure one or more connectors in the Control Center
+    4. Set up a webhook endpoint and handle key payment events
+    5. Configure routing rules
+    6. Test in sandbox using dummy cards and the fauxpay connector
+  </Accordion>
+
+  <Accordion title="Should I use the SDK or call the API directly?">
+    Use **both** — they serve different purposes.
+
+    **Server-side API** — create payment intents, manage refunds, retrieve payment status, and perform any operation that requires your secret API key. Your secret key must never be exposed to the client.
+
+    **Client-side SDK** (Web, iOS, Android, React Native) — display the payment UI, collect payment details, and confirm payments using the `client_secret` returned by the server. The SDK handles 3DS authentication, wallet flows, and redirect-based payment methods automatically.
+
+    If you have a fully server-side integration (for example, recurring charges with a stored payment method), you can call the API directly without the SDK.
+  </Accordion>
+
+  <Accordion title="How do I migrate from Stripe to Hyperswitch?">
+    Hyperswitch is designed to be API-compatible with Stripe in many areas. The Node SDK mirrors the Stripe SDK interface:
+
+    **Server-side — replace the import:**
+    ```javascript
+    // Before
+    const stripe = require("stripe")("your_stripe_api_key");
+
+    // After
+    const hyperswitch = require("@juspay-tech/hyperswitch-node")("your_hyperswitch_api_key");
+    ```
+
+    **iOS — update Podfile sources and replace the dependency:**
+    ```ruby
+    source 'https://github.com/juspay/hyperswitch-pods.git'
+    source 'https://cdn.cocoapods.org/'
+
+    # Replace: pod 'StripePaymentSheet'
+    pod 'hyperswitch', '1.0.0-alpha01'
+    ```
+
+    **Android — replace the Gradle dependency and update imports:**
+    ```gradle
+    // Replace: implementation 'com.stripe:stripe-android:20.27.3'
+    implementation 'io.hyperswitch:hyperswitch-android:1.0.1'
+    ```
+
+    Update imports from `com.stripe.android.*` to `io.hyperswitch.*`.
+
+    Hyperswitch also supports token migration from Stripe. You can transfer existing card tokens to the Hyperswitch vault so customers do not need to re-enter their card details.
+  </Accordion>
+
+  <Accordion title="How do I test my integration before going live?">
+    Use the sandbox environment (`sandbox.hyperswitch.io`) with these test cards:
+
+    | Scenario | Card number |
+    |----------|-------------|
+    | Successful Visa payment | `4242 4242 4242 4242` |
+    | Successful Mastercard payment | `5555 5555 5555 4444` |
+    | Card declined | `4000 0000 0000 0002` |
+    | Insufficient funds | `4000 0000 0000 9995` |
+    | Lost card | `4000 0000 0000 9987` |
+    | 3DS authentication success | `4000 0038 0000 0446` |
+
+    For all dummy connector test cards, use any future expiry date and any valid CVV.
+
+    Go-live checklist:
+    - Sign the Hyperswitch services agreement
+    - Configure production connectors with live credentials
+    - Enable payment methods on processor dashboards
+    - Store API keys securely and remove them from any public code
+    - Configure webhook endpoints and verify signature validation
+    - Implement error handling for all payment response codes
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Security and compliance
+
+<AccordionGroup>
+
+  <Accordion title="Is Hyperswitch PCI compliant?">
+    PCI DSS compliance scope depends on your deployment model and integration pattern.
+
+    **SaaS deployment** — Juspay maintains PCI DSS compliance for the hosted environment. Using the Hyperswitch Web or mobile SDK means sensitive card data never passes through your servers, significantly reducing your PCI scope.
+
+    **Self-hosted deployment** — you are responsible for PCI DSS compliance across your infrastructure. Hyperswitch uses a PCI-compliant Rust-based card vault (available at [github.com/juspay/hyperswitch-card-vault](https://github.com/juspay/hyperswitch-card-vault)) built with GDPR-compliant PII storage and AES-256 encryption.
+
+    For both models, using Hyperswitch's hosted SDK means card data is submitted directly from the customer's browser to Hyperswitch's vault without touching your application servers, keeping your PCI scope minimal.
+  </Accordion>
+
+  <Accordion title="How is card data stored and secured?">
+    Sensitive card data is stored in the Hyperswitch vault, which is built to comply with PCI DSS requirements:
+
+    - Each merchant account has a unique Data Encryption Key (DEK)
+    - Connector API credentials are encrypted with AES-256 symmetric encryption
+    - CVV is never stored — it is transmitted to the processor at payment time only
+    - The vault source code is open-source and auditable
+
+    For self-hosted deployments, you can use Hyperswitch's native vault, bring your own PCI-compliant vault, or configure a hybrid architecture using both.
+  </Accordion>
+
+  <Accordion title="What is the Hyperswitch card vault?">
+    The Hyperswitch card vault is a standalone Rust service that stores card data in a PCI DSS-compliant way. Cards are stored as a `payment_method_id` — a universal token that abstracts away connector-specific tokens.
+
+    This token is portable: you can route payments through different processors without re-collecting card details from the customer. Connector-agnostic merchant-initiated transactions (MIT) are supported for Stripe, Adyen, and Cybersource.
+
+    Network tokens from Visa, Mastercard, and Amex are also supported. These tokens automatically update when cards are replaced due to expiry, loss, or reissuance — reducing involuntary churn for subscription businesses.
+  </Accordion>
+
+  <Accordion title="How are API keys and connector credentials secured?">
+    - Secret API keys are never stored in plaintext
+    - Each merchant account has a unique Data Encryption Key (DEK) used to encrypt connector credentials
+    - Sensitive values are masked in the Control Center UI and are not exposed after initial entry
+    - Role-based access control restricts which team members can view or modify connector credentials
+
+    Best practices:
+    - Never expose your secret API key in frontend code, browser requests, or mobile apps
+    - Use publishable keys (`pk_snd_` or `pk_prd_`) only in client-side code
+    - Rotate credentials immediately if a key is suspected to be compromised
+    - Use environment variables — never commit keys to source control
+  </Accordion>
+
+  <Accordion title="How does Hyperswitch handle PSD2 Strong Customer Authentication?">
+    Hyperswitch supports SCA requirements under PSD2 for the European Economic Area through:
+
+    - 3DS 2.x support (versions 2.0, 2.1, and 2.2), with automatic fallback to 3DS 1.0 if the issuer does not support 2.x
+    - The 3DS Decision Manager — configure exemption rules based on transaction amount, card network, issuer country, and device type
+    - Supported exemption types: low-value, Transaction Risk Analysis (TRA), merchant-initiated transaction, and recurring transaction
+    - Native 3DS for mobile apps via Netcetera and 3DSecure.io integration
+
+    The 3DS Decision Manager is configured from **Workflow → 3DS Exemption Rules** in the Control Center. Changes apply to live traffic immediately without redeployment.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Webhooks and events
+
+<AccordionGroup>
+
+  <Accordion title="When should I use webhooks versus polling?">
+    **Webhooks** are recommended for most use cases. They provide real-time event notifications without requiring periodic API calls, and are the only reliable way to receive updates for asynchronous events like refunds, disputes, and mandate revocations.
+
+    **API polling** is useful when your server cannot receive inbound HTTP requests (for example, in certain restricted network environments), or as a supplementary fallback to ensure you never miss a status update:
+
+    ```http
+    GET /payments/{payment_id}
+    ```
+
+    For time-sensitive flows — such as confirming a flight booking or issuing a digital product — set up webhooks and listen for `payment_succeeded` before fulfilling the order.
+  </Accordion>
+
+  <Accordion title="How do I handle duplicate webhook events?">
+    Hyperswitch retries webhook delivery for up to 24 hours, which means your endpoint may receive the same event more than once. Use the `event_id` field in the webhook payload to deduplicate.
+
+    Store processed event IDs in a persistent store (a database or Redis), check before processing each incoming event, and retain IDs for at least 24 hours.
+
+    See [Webhooks — Handling duplicates](/resources/webhooks#handling-duplicates) for a complete code example.
+  </Accordion>
+
+  <Accordion title="How do I verify that a webhook is genuinely from Hyperswitch?">
+    Hyperswitch signs all webhook deliveries with an HMAC-SHA512 signature included in the `x-webhook-signature-512` header. Compute the expected signature using your `payment_response_hash_key` and compare it to the header value using a constant-time comparison.
+
+    See [Webhooks — Verifying signatures](/resources/webhooks#verifying-webhook-signatures) for step-by-step instructions and code examples in Node.js and Python.
+  </Accordion>
+
+</AccordionGroup>
+
+---
+
+## Architecture and performance
+
+<AccordionGroup>
+
+  <Accordion title="What overhead does Hyperswitch add to payment latency?">
+    The Hyperswitch application adds approximately **25 milliseconds** of overhead to the transaction path. The vast majority of total transaction latency is determined by the payment processor itself, not by Hyperswitch.
+
+    | Component | Latency |
+    |-----------|---------|
+    | Network latency (client to your server) | Baseline |
+    | **Hyperswitch application latency** | **~25ms** |
+    | Network latency (your server to processor) | Baseline |
+    | Processor latency | Baseline |
+
+    This near-zero overhead is achieved through in-memory configuration caching (eliminating per-transaction database lookups for merchant and processor config), Redis-based transaction data storage, asynchronous database writes, and parallelization of independent operations.
+  </Accordion>
+
+  <Accordion title="What does the Hyperswitch architecture look like?">
+    Hyperswitch consists of two main services:
+
+    **Router** — the primary service. Handles all core payment flows: request validation, routing decisions, connector API translation, response normalization, and webhook delivery. All payment requests pass through the Router.
+
+    **Scheduler** — manages background task execution. The Producer reads scheduled tasks from the database and queues them in Redis. The Consumer retrieves and executes tasks (for example, expiring saved cards after a configured retention period, or notifying you when an API key is about to expire).
+
+    **Infrastructure components:**
+    - **PostgreSQL** — primary data store with a master-replica setup for read/write separation
+    - **Redis** — used for caching (merchant config, transaction data) and as the Scheduler's task queue
+    - **Vault** — a separate PCI-compliant Rust service for storing sensitive card data
+
+    **Monitoring stack** (self-hosted):
+    - OpenTelemetry Collector for metrics and traces
+    - Prometheus for metrics retrieval
+    - Grafana Loki for log storage and querying
+    - Grafana Tempo for distributed tracing
+    - Grafana dashboards for visualization
+  </Accordion>
+
+  <Accordion title="How does Hyperswitch achieve high availability?">
+    For production deployments, Hyperswitch is designed to be deployed horizontally:
+
+    - Stateless Router instances behind a load balancer
+    - Multi-availability-zone deployment on Kubernetes
+    - Readiness and liveness probes with automatic pod restart
+    - Horizontal pod autoscaling based on traffic load
+
+    At the payment level, multi-connector failover provides availability redundancy: elimination routing deprioritizes connectors with elevated error rates, smart retries route failed transactions to alternative processors, and fallback routing ensures payments continue even if a primary connector is unavailable.
+
+    The health check endpoint at `/health/ready` verifies database connectivity, Redis connectivity, vault availability, and outgoing network connectivity.
+  </Accordion>
+
+</AccordionGroup>

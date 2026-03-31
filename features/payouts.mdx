@@ -1,0 +1,226 @@
+---
+title: "Payouts"
+description: "Disburse funds to vendors, sellers, contractors, and partners via cards, bank rails, and digital wallets — with smart routing, tokenization, and bulk operations."
+---
+
+Hyperswitch Payouts lets you send money to third parties programmatically — affiliates, marketplace sellers, freelancers, or any recipient — across a variety of payment methods and regions. A single API controls the full payout lifecycle, from creation through delivery and reconciliation.
+
+## Supported connectors and methods
+
+| Connector | Regions | Cards | Bank rails | Wallets |
+|-----------|---------|-------|------------|---------|
+| **Adyen** | Global | Major networks | SEPA, SWIFT, ACH | PayPal, Neteller*, Skrill* |
+| **Stripe** | Global | Major networks | SEPA | — |
+| **Wise** | Global | Major networks | SEPA, SWIFT, ACH | — |
+| **PayPal** | Global | — | — | PayPal, Venmo (US) |
+| **Ebanx** | LATAM | — | Pix** | — |
+| **Cybersource** | Global | Major networks | — | — |
+
+<Note>
+  Methods marked `*` are supported but not enabled by default. Methods marked `**` are in beta. Contact support to enable these options.
+</Note>
+
+## Setting up payout processors
+
+<Steps>
+  <Step title="Add a payout connector">
+    In the Control Center, navigate to **Connectors** → **Payout Processors** and click **Connect**. Enter your API credentials for the payout provider (Adyen, Stripe, Wise, PayPal, etc.).
+  </Step>
+  <Step title="Configure supported payout methods">
+    Enable the payout methods (card, bank transfer, wallet) that the connector supports and that you want to offer to recipients.
+  </Step>
+  <Step title="Set payout routing">
+    Optionally configure a routing rule for payouts under **Workflow** → **Routing**. You can use the same rule-based and volume-based strategies available for payments. If no rule is configured, Hyperswitch uses the default fallback order.
+  </Step>
+</Steps>
+
+## Creating a payout via API
+
+```bash
+curl --request POST \
+  --url https://sandbox.hyperswitch.io/payouts/create \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: <your-api-key>' \
+  --data '{
+    "amount": 5000,
+    "currency": "USD",
+    "customer_id": "vendor_abc123",
+    "payout_type": "card",
+    "payout_method_data": {
+      "card": {
+        "card_number": "4111111111111111",
+        "card_exp_month": "06",
+        "card_exp_year": "28",
+        "card_holder_name": "Maria Lopez"
+      }
+    },
+    "billing": {
+      "address": {
+        "line1": "123 Main St",
+        "city": "San Francisco",
+        "state": "CA",
+        "zip": "94105",
+        "country": "US",
+        "first_name": "Maria",
+        "last_name": "Lopez"
+      }
+    },
+    "description": "Vendor settlement - March 2026",
+    "auto_fulfill": true
+  }'
+```
+
+**Key request fields:**
+
+| Field | Description |
+|-------|-------------|
+| `amount` | Payout amount in the smallest currency unit (cents for USD) |
+| `currency` | ISO 4217 currency code |
+| `payout_type` | `card`, `bank`, or `wallet` |
+| `auto_fulfill` | If `true`, Hyperswitch immediately submits the payout to the processor |
+| `customer_id` | Optional — links the payout to a stored customer and their saved payment methods |
+
+## Payout to a bank account
+
+```bash
+curl --request POST \
+  --url https://sandbox.hyperswitch.io/payouts/create \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: <your-api-key>' \
+  --data '{
+    "amount": 15000,
+    "currency": "EUR",
+    "payout_type": "bank",
+    "payout_method_data": {
+      "bank": {
+        "iban": "DE89370400440532013000",
+        "bic": "COBADEFFXXX",
+        "bank_name": "Commerzbank",
+        "bank_country_code": "DE",
+        "bank_city": "Frankfurt"
+      }
+    },
+    "billing": {
+      "address": {
+        "line1": "Kaiserstrasse 10",
+        "city": "Frankfurt",
+        "country": "DE",
+        "first_name": "Klaus",
+        "last_name": "Weber"
+      }
+    },
+    "description": "Contractor payment - March 2026",
+    "auto_fulfill": true
+  }'
+```
+
+## Using saved payment methods for payouts
+
+If a recipient's card or bank details are already vaulted (via Hyperswitch's vault or from a prior transaction), pass `payout_token` instead of raw payment method data. This avoids re-collecting sensitive details and prevents vendor lock-in.
+
+```bash
+curl --request POST \
+  --url https://sandbox.hyperswitch.io/payouts/create \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: <your-api-key>' \
+  --data '{
+    "amount": 7500,
+    "currency": "USD",
+    "customer_id": "vendor_abc123",
+    "payout_type": "card",
+    "payout_token": "pm_8a3bc92f4d1e5678",
+    "auto_fulfill": true,
+    "description": "Weekly payout - Week 13"
+  }'
+```
+
+<Tip>
+  Tokenizing recipient payment details independently of the payout processor means you can switch payout providers (e.g. from Stripe to Adyen) without asking recipients to re-submit their card or bank details.
+</Tip>
+
+## Smart routing for payouts
+
+Hyperswitch applies the same routing engine to payouts as to payments. You can configure:
+
+- **Rule-based routing** — route by currency, country, payout amount, or payout method type.
+- **Volume-based routing** — split payout volume across processors by percentage.
+- **Default fallback** — an ordered list of processors used when no rule applies.
+
+**Example: route EUR bank payouts through Wise**
+
+```json
+{
+  "name": "EUR bank via Wise",
+  "rules": [
+    {
+      "name": "eur_bank_payout",
+      "connector_selection": {
+        "type": "single",
+        "data": { "connector": "wise", "merchant_connector_id": "mca_wise_001" }
+      },
+      "statements": [
+        {
+          "condition": [
+            { "lhs": "currency", "comparison": "equal", "value": { "type": "enum_variant", "value": "EUR" } },
+            { "lhs": "payout_type", "comparison": "equal", "value": { "type": "enum_variant", "value": "bank" } }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+## Smart retries for payouts
+
+If a payout fails due to a temporary connector error, Hyperswitch automatically retries through the next eligible connector in your routing configuration. This ensures recipients are paid without manual resubmission.
+
+See [Smart Retries](/features/smart-retries) for details on how retry logic works.
+
+## Bulk payouts
+
+For high-volume disbursements, upload a `.xlsx` or `.csv` file directly in the Control Center under **Payouts** → **Bulk Upload**. Each row in the file represents a single payout. Hyperswitch validates the file, creates individual payout records, and processes them in parallel.
+
+Required columns: `amount`, `currency`, `payout_type`, and at minimum the payment method fields for the chosen type (card number + expiry, or IBAN + BIC for bank).
+
+## Payout links
+
+Payout links let recipients choose their preferred payout method rather than requiring you to collect that information in advance. Hyperswitch generates a hosted page where the recipient enters their card or bank details to receive the funds.
+
+Create a payout link:
+
+```bash
+curl --request POST \
+  --url https://sandbox.hyperswitch.io/payout_link/create \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: <your-api-key>' \
+  --data '{
+    "amount": 10000,
+    "currency": "USD",
+    "customer_id": "vendor_new_001",
+    "description": "Freelancer payment - Project Alpha",
+    "payout_link_config": {
+      "expiry": 86400
+    }
+  }'
+```
+
+The response includes a `payout_link_url`. Share it with the recipient via email or notification. The link expires after the configured duration (in seconds).
+
+## Account verification
+
+Before processing bank payouts, you can verify the recipient's bank account through Stripe or other supported verification providers. This reduces failed payouts caused by invalid account numbers.
+
+Navigate to **Payouts** → **Account Verification** in the Control Center to configure a verification provider.
+
+## Payout statuses
+
+| Status | Meaning |
+|--------|---------|
+| `requires_fulfillment` | Payout created with `auto_fulfill: false`; awaiting manual trigger |
+| `pending` | Submitted to the processor; awaiting confirmation |
+| `initiated` | Processor accepted the payout; funds in transit |
+| `success` | Payout delivered to the recipient |
+| `failed` | Payout failed; check error details for reason |
+| `cancelled` | Payout cancelled before fulfillment |
+| `reversed` | Processor reversed a previously successful payout |

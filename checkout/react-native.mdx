@@ -1,0 +1,331 @@
+---
+title: "React Native SDK"
+description: "Integrate the Hyperswitch payment sheet into your React Native app. Supports iOS and Android, Expo, payment sheet mode, and headless mode."
+---
+
+The Hyperswitch React Native SDK renders a native payment sheet on both iOS and Android from a single integration. It wraps the native SDKs and exposes a JavaScript API for initializing sessions, presenting the payment sheet, and handling results.
+
+## Requirements
+
+| Platform | Minimum version |
+|---|---|
+| Android | 7.0 (API level 24) |
+| iOS | 12.4 |
+| Android Gradle Plugin | 7.3.1 |
+| Gradle | 7.5.1+ |
+
+---
+
+## Integration
+
+<Steps>
+
+<Step title="Install the SDK and peer dependencies">
+
+<Tabs>
+  <Tab title="npm">
+
+```bash
+npm install @juspay-tech/react-native-hyperswitch
+npm install react-native-inappbrowser-reborn react-native-svg @sentry/react-native
+```
+
+  </Tab>
+  <Tab title="yarn">
+
+```bash
+yarn add @juspay-tech/react-native-hyperswitch
+yarn add react-native-inappbrowser-reborn react-native-svg @sentry/react-native
+```
+
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Install iOS CocoaPods dependencies">
+
+From your project root, run:
+
+```bash
+cd ios && pod install
+```
+
+<Note>
+  This step is only required for iOS. Android dependencies are resolved automatically by Gradle.
+</Note>
+
+</Step>
+
+<Step title="Create a payment intent on your server">
+
+Your server calls the Hyperswitch Payments API and returns the `client_secret` and `sdkAuthorization` to the app. Never include your secret API key in the app.
+
+```js
+// Example server-side route (Node.js / Express)
+app.post("/create-payment", async (req, res) => {
+  const payment = await fetch("https://sandbox.hyperswitch.io/payments", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.HYPERSWITCH_API_KEY,
+    },
+    body: JSON.stringify({ amount: 1000, currency: "USD", confirm: false }),
+  }).then((r) => r.json());
+
+  res.json({
+    clientSecret: payment.client_secret,
+    sdkAuthorization: payment.client_secret, // used for SDK-level auth
+  });
+});
+```
+
+</Step>
+
+<Step title="Wrap your app with HyperProvider">
+
+`HyperProvider` initializes the SDK and must wrap any component that calls `useHyper()`. Place it at the root of your app or around your payment screens.
+
+```jsx
+import React from "react";
+import { HyperProvider } from "@juspay-tech/react-native-hyperswitch";
+
+export default function App() {
+  return (
+    <HyperProvider
+      publishableKey="YOUR_PUBLISHABLE_KEY"
+      profileId="YOUR_PROFILE_ID"
+    >
+      {/* Rest of your app */}
+    </HyperProvider>
+  );
+}
+```
+
+</Step>
+
+<Step title="Fetch the payment intent and initialize the payment session">
+
+In your checkout screen, import `useHyper` and call `initPaymentSession` with the `clientSecret` from your server.
+
+```jsx
+import React, { useState, useEffect } from "react";
+import { useHyper } from "@juspay-tech/react-native-hyperswitch";
+
+const API_URL = "https://your-server.example.com";
+
+export default function CheckoutScreen() {
+  const { initPaymentSession, presentPaymentSheet } = useHyper();
+  const [paymentSession, setPaymentSession] = useState(null);
+
+  const fetchPaymentParams = async () => {
+    const response = await fetch(`${API_URL}/create-payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [{ id: "xl-tshirt" }], country: "US" }),
+    });
+    return response.json();
+  };
+
+  const initializePaymentSheet = async () => {
+    const { clientSecret, sdkAuthorization } = await fetchPaymentParams();
+
+    const customAppearance = {
+      colors: {
+        light: {
+          primary: "#0066cc",
+        },
+      },
+    };
+
+    const params = {
+      merchantDisplayName: "Example, Inc.",
+      clientSecret,
+      sdkAuthorization,
+      appearance: customAppearance,
+    };
+
+    const result = await initPaymentSession(params);
+
+    if (result.error) {
+      console.error("Payment session initialization failed:", result.error);
+    } else {
+      setPaymentSession(result);
+    }
+  };
+
+  useEffect(() => {
+    initializePaymentSheet();
+  }, []);
+
+  // ...
+}
+```
+
+</Step>
+
+<Step title="Present the payment sheet and handle the result">
+
+Add a button that calls `presentPaymentSheet()` when tapped. The function returns an object containing either an error or a payment status.
+
+```jsx
+const openPaymentSheet = async () => {
+  const result = await presentPaymentSheet(paymentSession);
+
+  if (result.error) {
+    console.log(`Error code: ${result.error.code}`, result.error.message);
+    return;
+  }
+
+  if (result.status) {
+    switch (result.status) {
+      case "succeeded":
+        console.log("Payment succeeded");
+        break;
+      case "requires_capture":
+        console.log("Payment requires capture");
+        break;
+      case "cancelled":
+        console.log("Payment cancelled");
+        break;
+      case "failed":
+        console.log("Payment failed");
+        break;
+      default:
+        console.log("Unhandled status:", result.status);
+    }
+  }
+};
+
+return (
+  <View style={styles.container}>
+    <Button title="Pay now" onPress={openPaymentSheet} />
+  </View>
+);
+```
+
+<Warning>
+  Always retrieve the final payment status from the Hyperswitch backend. The status returned by `presentPaymentSheet` may not represent the definitive outcome of the transaction.
+</Warning>
+
+</Step>
+
+</Steps>
+
+---
+
+## Complete example
+
+```jsx
+import React, { useState, useEffect } from "react";
+import { View, Button, StyleSheet } from "react-native";
+import {
+  HyperProvider,
+  useHyper,
+} from "@juspay-tech/react-native-hyperswitch";
+
+const API_URL = "https://your-server.example.com";
+
+function CheckoutScreen() {
+  const { initPaymentSession, presentPaymentSheet } = useHyper();
+  const [paymentSession, setPaymentSession] = useState(null);
+
+  const fetchPaymentParams = async () => {
+    const response = await fetch(`${API_URL}/create-payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: [{ id: "xl-tshirt" }], country: "US" }),
+    });
+    return response.json();
+  };
+
+  useEffect(() => {
+    const initialize = async () => {
+      const { clientSecret, sdkAuthorization } = await fetchPaymentParams();
+
+      const result = await initPaymentSession({
+        merchantDisplayName: "Example, Inc.",
+        clientSecret,
+        sdkAuthorization,
+        appearance: {
+          colors: { light: { primary: "#0066cc" } },
+        },
+      });
+
+      if (!result.error) {
+        setPaymentSession(result);
+      }
+    };
+
+    initialize();
+  }, []);
+
+  const openPaymentSheet = async () => {
+    const result = await presentPaymentSheet(paymentSession);
+
+    if (result.error) {
+      console.log("Error:", result.error.message);
+    } else if (result.status === "succeeded") {
+      console.log("Payment succeeded");
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Button title="Pay now" onPress={openPaymentSheet} />
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <HyperProvider
+      publishableKey="YOUR_PUBLISHABLE_KEY"
+      profileId="YOUR_PROFILE_ID"
+    >
+      <CheckoutScreen />
+    </HyperProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+});
+```
+
+---
+
+## Expo integration
+
+<Note>
+  The Hyperswitch React Native SDK uses native modules that require a custom development build. It is not compatible with the Expo Go app.
+</Note>
+
+To use the SDK in an Expo-managed workflow:
+
+1. Install the SDK and peer dependencies as described above.
+2. Run `npx expo prebuild` to generate the native `ios/` and `android/` directories.
+3. Use `npx expo run:ios` and `npx expo run:android` instead of the Expo Go app.
+
+```bash
+npx expo prebuild
+npx expo run:android
+npx expo run:ios
+```
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configure payment methods" icon="credit-card" href="https://app.hyperswitch.io/dashboard/connectors">
+    Enable connectors and payment methods in the Hyperswitch dashboard.
+  </Card>
+  <Card title="Payment links" icon="link" href="/checkout/payment-links">
+    Generate shareable payment links without embedding an SDK.
+  </Card>
+</CardGroup>

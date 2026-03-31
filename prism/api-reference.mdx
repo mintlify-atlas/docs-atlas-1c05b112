@@ -1,0 +1,987 @@
+---
+title: "Prism API reference"
+description: "Complete reference for all Prism services — Payment, Refund, Recurring, Dispute, Event, Customer, Payment Method, and Merchant Authentication."
+---
+
+Prism provides a unified gRPC API organized into services that handle different aspects of the payment lifecycle. All services share the same [error format](#error-object) and use Protocol Buffer types defined in `services.proto`.
+
+## Services overview
+
+| Service | Description | Key operations |
+|---|---|---|
+| [Payment Service](#payment-service) | Core payment lifecycle | CreateOrder, Authorize, Capture, Void, Refund, Reverse, IncrementalAuthorization, SetupRecurring |
+| [Refund Service](#refund-service) | Refund status and management | Get refund status |
+| [Recurring Payment Service](#recurring-payment-service) | Stored payment methods | Charge, Revoke mandate |
+| [Dispute Service](#dispute-service) | Chargeback handling | Accept, Defend, SubmitEvidence |
+| [Event Service](#event-service) | Webhook processing | Handle connector events |
+| [Customer Service](#customer-service) | Customer management | CreateCustomer |
+| [Payment Method Service](#payment-method-service) | Payment method storage | Tokenize |
+| [Merchant Authentication Service](#merchant-authentication-service) | Session management | CreateAccessToken, CreateSessionToken, CreateSdkSessionToken |
+
+---
+
+## Payment Service
+
+The Payment Service handles the complete payment lifecycle for digital businesses. It supports both synchronous responses and asynchronous flows (3DS authentication, redirect-based payments).
+
+<AccordionGroup>
+  <Accordion title="CreateOrder">
+    Initializes a payment order at the processor before collecting card details. Use this to generate a session token for wallet payments (Apple Pay, Google Pay) or to establish payment context early for better fraud detection and authorization rates.
+
+    **Request fields**
+
+    <ParamField body="merchant_order_id" type="string" required>
+      Your unique identifier for this order.
+    </ParamField>
+
+    <ParamField body="amount" type="Money" required>
+      The expected payment amount.
+
+      <Expandable title="Money fields">
+        <ParamField body="minor_amount" type="int64" required>
+          Amount in the smallest currency unit (e.g., 1000 = $10.00 for USD).
+        </ParamField>
+        <ParamField body="currency" type="string" required>
+          ISO 4217 currency code (e.g., `USD`, `EUR`, `GBP`).
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField body="webhook_url" type="string">
+      URL for webhook notifications from the processor.
+    </ParamField>
+
+    <ParamField body="payment_method_type" type="PaymentMethodType">
+      Type of payment method — for example, `apple_pay` or `google_pay`.
+    </ParamField>
+
+    <ParamField body="test_mode" type="boolean">
+      Process as a test transaction. Defaults to `false`.
+    </ParamField>
+
+    <ParamField body="metadata" type="SecretString">
+      Additional metadata forwarded to the connector.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_order_id" type="string">
+      The processor's identifier for the created order.
+    </ResponseField>
+
+    <ResponseField name="status" type="PaymentStatus">
+      Status of the order creation attempt. Typically `STARTED`.
+    </ResponseField>
+
+    <ResponseField name="merchant_order_id" type="string">
+      Your order reference, echoed back.
+    </ResponseField>
+
+    <ResponseField name="session_token" type="SessionToken">
+      JSON-serialized session token for wallet payment SDKs. Stripe returns a `client_secret`; Adyen returns `session_id` and `session_data`.
+    </ResponseField>
+
+    <ResponseField name="error" type="ErrorInfo">
+      Populated if order creation failed. See [Error object](#error-object).
+    </ResponseField>
+
+    **Example**
+
+    ```bash grpcurl
+    grpcurl -H "x-connector: stripe" \
+      -H "x-connector-config: {\"config\":{\"Stripe\":{\"api_key\":\"$STRIPE_API_KEY\"}}}" \
+      -d '{
+        "merchant_order_id": "order_001",
+        "amount": { "minor_amount": 1000, "currency": "USD" },
+        "webhook_url": "https://your-app.com/webhooks/stripe",
+        "test_mode": true
+      }' \
+      localhost:8080 \
+      types.PaymentService/CreateOrder
+    ```
+
+    ```json Response
+    {
+      "connector_order_id": "pi_3Oxxx...",
+      "status": "STARTED",
+      "status_code": 200,
+      "merchant_order_id": "order_001",
+      "session_token": {
+        "client_secret": "pi_3Oxxx..._secret_xxx"
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Authorize">
+    Reserves funds on a customer's payment method without transferring them. This is the first step in the two-step authorize + capture flow. Funds are held for a processor-defined period (typically 7–10 days).
+
+    **Request fields**
+
+    <ParamField body="merchant_transaction_id" type="string" required>
+      Your unique transaction reference.
+    </ParamField>
+
+    <ParamField body="amount" type="Money" required>
+      The amount to authorize in minor currency units.
+    </ParamField>
+
+    <ParamField body="payment_method" type="PaymentMethod" required>
+      The payment method to charge. Accepts a `payment_method_id` (from frontend SDK), raw `card` details (PCI compliant only), or a wallet token.
+    </ParamField>
+
+    <ParamField body="auth_type" type="AuthenticationType" required>
+      Authentication flow. Use `NO_THREE_DS` for direct charges or `THREE_DS` to trigger 3DS authentication.
+    </ParamField>
+
+    <ParamField body="capture_method" type="CaptureMethod">
+      `MANUAL` to hold funds for a later capture, or `AUTOMATIC` to capture immediately. Defaults to `AUTOMATIC`.
+    </ParamField>
+
+    <ParamField body="customer" type="Customer">
+      Customer information used for fraud scoring.
+    </ParamField>
+
+    <ParamField body="return_url" type="string">
+      URL to redirect the customer after 3DS or redirect-based flows complete.
+    </ParamField>
+
+    <ParamField body="merchant_order_id" type="string">
+      Your internal order ID. Associate this with the `connector_order_id` from `CreateOrder` for improved authorization rates.
+    </ParamField>
+
+    <ParamField body="setup_future_usage" type="FutureUsage">
+      `ON_SESSION` or `OFF_SESSION` — controls whether the payment method is saved for future use.
+    </ParamField>
+
+    <ParamField body="request_incremental_authorization" type="boolean">
+      Set to `true` to allow increasing the authorized amount later via `IncrementalAuthorization`.
+    </ParamField>
+
+    <ParamField body="test_mode" type="boolean">
+      Process as a test transaction.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_transaction_id" type="string">
+      The processor's transaction ID (e.g., Stripe's `pi_xxx`). Required for `Capture`, `Void`, and `Refund`.
+    </ResponseField>
+
+    <ResponseField name="status" type="PaymentStatus">
+      `AUTHORIZED`, `PENDING`, `FAILED`, or a redirect status if 3DS is required.
+    </ResponseField>
+
+    <ResponseField name="redirection_data" type="RedirectForm">
+      Redirect URL or POST form data if the customer must complete 3DS or a bank redirect. Present only when `status` indicates a redirect is needed.
+    </ResponseField>
+
+    <ResponseField name="incremental_authorization_allowed" type="boolean">
+      Whether the authorized amount can be increased via `IncrementalAuthorization`.
+    </ResponseField>
+
+    <ResponseField name="error" type="ErrorInfo">
+      Populated if authorization failed.
+    </ResponseField>
+
+    **Example**
+
+    ```bash grpcurl
+    grpcurl -H "x-connector: stripe" \
+      -H "x-connector-config: {\"config\":{\"Stripe\":{\"api_key\":\"$STRIPE_API_KEY\"}}}" \
+      -d '{
+        "merchant_transaction_id": "txn_order_001",
+        "amount": { "minor_amount": 1000, "currency": "USD" },
+        "payment_method": {
+          "card": {
+            "card_number": "4242424242424242",
+            "expiry_month": "12",
+            "expiry_year": "2027",
+            "card_holder_name": "John Doe",
+            "cvc": "123"
+          }
+        },
+        "auth_type": "NO_THREE_DS",
+        "capture_method": "MANUAL",
+        "test_mode": true
+      }' \
+      localhost:8080 \
+      types.PaymentService/Authorize
+    ```
+
+    ```json Response
+    {
+      "merchant_transaction_id": "txn_order_001",
+      "connector_transaction_id": "pi_3Oxxx...",
+      "status": "AUTHORIZED",
+      "status_code": 200,
+      "incremental_authorization_allowed": false
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Capture">
+    Transfers reserved funds from the customer's payment method to your merchant account. Call this after `Authorize` when you are ready to charge — for example, when an order ships. You can capture less than the authorized amount for partial shipments.
+
+    **Request fields**
+
+    <ParamField body="merchant_capture_id" type="string" required>
+      Your unique identifier for this capture operation.
+    </ParamField>
+
+    <ParamField body="connector_transaction_id" type="string" required>
+      The processor's transaction ID from the original `Authorize` response.
+    </ParamField>
+
+    <ParamField body="amount_to_capture" type="Money" required>
+      The amount to capture. Must be less than or equal to the authorized amount.
+    </ParamField>
+
+    <ParamField body="merchant_order_id" type="string">
+      Your internal order ID for reference.
+    </ParamField>
+
+    <ParamField body="test_mode" type="boolean">
+      Process as a test transaction.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_transaction_id" type="string">
+      The processor's transaction ID.
+    </ResponseField>
+
+    <ResponseField name="status" type="PaymentStatus">
+      `CAPTURED`, `PENDING`, or `FAILED`.
+    </ResponseField>
+
+    <ResponseField name="captured_amount" type="int64">
+      Total captured amount in minor currency units.
+    </ResponseField>
+
+    <ResponseField name="error" type="ErrorInfo">
+      Populated if capture failed.
+    </ResponseField>
+
+    **Example**
+
+    ```bash grpcurl
+    grpcurl -H "x-connector: stripe" \
+      -H "x-connector-config: {\"config\":{\"Stripe\":{\"api_key\":\"$STRIPE_API_KEY\"}}}" \
+      -d '{
+        "merchant_capture_id": "capture_001",
+        "connector_transaction_id": "pi_3Oxxx...",
+        "amount_to_capture": { "minor_amount": 1000, "currency": "USD" },
+        "merchant_order_id": "order-001",
+        "test_mode": true
+      }' \
+      localhost:8080 \
+      types.PaymentService/Capture
+    ```
+
+    ```json Response
+    {
+      "connector_transaction_id": "pi_3Oxxx...",
+      "status": "CAPTURED",
+      "status_code": 200,
+      "merchant_capture_id": "capture_001",
+      "captured_amount": 1000
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Refund">
+    Returns funds to the customer's payment method after the original payment has been captured and settled. Supports full and partial refunds. This creates a separate refund transaction — the original payment remains captured.
+
+    **Request fields**
+
+    <ParamField body="merchant_refund_id" type="string" required>
+      Your unique identifier for this refund operation.
+    </ParamField>
+
+    <ParamField body="connector_transaction_id" type="string" required>
+      The processor's transaction ID from the original authorization.
+    </ParamField>
+
+    <ParamField body="payment_amount" type="int64" required>
+      The original payment amount in minor currency units.
+    </ParamField>
+
+    <ParamField body="refund_amount" type="Money" required>
+      The amount to refund. Can be less than the original (partial refund).
+    </ParamField>
+
+    <ParamField body="reason" type="string">
+      Human-readable reason for the refund (e.g., `Customer returned item`).
+    </ParamField>
+
+    <ParamField body="test_mode" type="boolean">
+      Process as a test transaction.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_refund_id" type="string">
+      The processor's ID for the refund.
+    </ResponseField>
+
+    <ResponseField name="status" type="RefundStatus">
+      `PENDING`, `SUCCEEDED`, or `FAILED`.
+    </ResponseField>
+
+    <ResponseField name="refund_amount" type="Money">
+      The amount being refunded.
+    </ResponseField>
+
+    <ResponseField name="created_at" type="int64">
+      Unix timestamp when the refund was created.
+    </ResponseField>
+
+    <ResponseField name="error" type="ErrorInfo">
+      Populated if the refund failed.
+    </ResponseField>
+
+    **Example**
+
+    ```bash grpcurl
+    grpcurl -H "x-connector: stripe" \
+      -H "x-connector-config: {\"config\":{\"Stripe\":{\"api_key\":\"$STRIPE_API_KEY\"}}}" \
+      -d '{
+        "merchant_refund_id": "refund_001",
+        "connector_transaction_id": "pi_3Oxxx...",
+        "payment_amount": 1000,
+        "refund_amount": { "minor_amount": 1000, "currency": "USD" },
+        "reason": "Customer returned item",
+        "test_mode": true
+      }' \
+      localhost:8080 \
+      types.PaymentService/Refund
+    ```
+
+    ```json Response
+    {
+      "merchant_refund_id": "refund_001",
+      "connector_refund_id": "re_3Oxxx...",
+      "status": "SUCCEEDED",
+      "status_code": 200,
+      "refund_amount": { "minor_amount": 1000, "currency": "USD" },
+      "payment_amount": 1000,
+      "refund_reason": "Customer returned item",
+      "created_at": 1709577600
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Void">
+    Cancels an authorized payment before it is captured. Releases the held funds back to the customer. Use this when an order is cancelled or abandoned after authorization but before fulfillment.
+
+    **Request fields**
+
+    <ParamField body="connector_transaction_id" type="string" required>
+      The processor's transaction ID from `Authorize`.
+    </ParamField>
+
+    <ParamField body="cancellation_reason" type="string">
+      Reason for voiding the authorization (e.g., `Customer cancelled`).
+    </ParamField>
+
+    <ParamField body="test_mode" type="boolean">
+      Process as a test transaction.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_transaction_id" type="string">
+      The processor's transaction ID.
+    </ResponseField>
+
+    <ResponseField name="status" type="PaymentStatus">
+      `VOIDED` on success.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="IncrementalAuthorization">
+    Increases the authorized amount on an existing authorization that is still in `AUTHORIZED` state. Used for hotel incidentals, restaurant tips, or any scenario where the final charge is not known at authorization time.
+
+    **Request fields**
+
+    <ParamField body="connector_transaction_id" type="string" required>
+      The processor's transaction ID from the original `Authorize`.
+    </ParamField>
+
+    <ParamField body="additional_amount" type="Money" required>
+      The amount to add to the existing authorization.
+    </ParamField>
+
+    <ParamField body="total_amount" type="Money" required>
+      The new total authorized amount (original + additional).
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="status" type="AuthorizationStatus">
+      `AUTHORIZED` if the increase was successful.
+    </ResponseField>
+
+    <ResponseField name="error" type="ErrorInfo">
+      Populated if the incremental authorization was rejected.
+    </ResponseField>
+
+    **Example**
+
+    ```javascript
+    // Initial authorization: $100 hold
+    const auth = await client.payments.authorize({
+      amount: { minorAmount: 10000, currency: 'USD' },
+      captureMethod: CaptureMethod.MANUAL
+    });
+
+    // Guest adds room service: increase hold to $150
+    const incremental = await client.payments.incrementalAuthorization({
+      paymentId: auth.paymentId,
+      additionalAmount: { minorAmount: 5000, currency: 'USD' }
+    });
+
+    // At checkout: capture actual amount
+    await client.payments.capture({
+      paymentId: auth.paymentId,
+      amount: { minorAmount: 14750, currency: 'USD' }
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Reverse">
+    Reverses a captured payment before bank settlement. Use this for same-day cancellations or processing corrections. Unlike `Refund`, a reversal happens before the funds have settled, so it typically completes faster.
+
+    **Request fields**
+
+    <ParamField body="connector_transaction_id" type="string" required>
+      The processor's transaction ID to reverse.
+    </ParamField>
+
+    <ParamField body="amount" type="Money" required>
+      The amount to reverse.
+    </ParamField>
+
+    **Example**
+
+    ```javascript
+    await client.payments.reverse({
+      connectorTransactionId: 'pi_3MqSCR2eZvKYlo2C1',
+      amount: { minorAmount: 10000, currency: 'USD' }
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="SetupRecurring">
+    Creates a payment mandate (stored authorization) for future charges. Use this to save a customer's payment method for subscriptions, installments, or any scenario where you need to charge without the customer present.
+
+    **Request fields**
+
+    <ParamField body="customer_id" type="string" required>
+      Your identifier for the customer.
+    </ParamField>
+
+    <ParamField body="payment_method" type="PaymentMethod" required>
+      The payment method to store (card details or payment method token).
+    </ParamField>
+
+    <ParamField body="mandate_data" type="MandateData">
+      Terms of the recurring agreement, including frequency and amount limits.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_recurring_payment_id" type="string">
+      The mandate reference. Store this and pass it to the Recurring Payment Service `Charge` operation for future billing cycles.
+    </ResponseField>
+
+    **Example**
+
+    ```javascript
+    // Set up the mandate once during subscription signup
+    const recurring = await client.payments.setupRecurring({
+      customerId: 'cus_xyz789',
+      paymentMethod: { card: { /* card details */ } }
+    });
+
+    // Store recurring.connectorRecurringPaymentId
+    // Use it in RecurringPaymentService.Charge each billing cycle
+    ```
+  </Accordion>
+
+  <Accordion title="Get">
+    Retrieves the current payment status from the processor. Use this to synchronize your system with the processor state, for webhook recovery, or to verify authorization is still active before fulfillment.
+
+    **Request fields**
+
+    <ParamField body="connector_transaction_id" type="string" required>
+      The processor's transaction ID to look up.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="status" type="PaymentStatus">
+      The current payment status at the processor.
+    </ResponseField>
+
+    <ResponseField name="captured_amount" type="int64">
+      Total amount captured so far, in minor currency units.
+    </ResponseField>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Recurring Payment Service
+
+Manages charges against stored mandates created via `PaymentService.SetupRecurring`. Use this for subscription billing cycles where the customer is not present.
+
+<AccordionGroup>
+  <Accordion title="Charge">
+    Creates a new charge using a stored mandate reference. The customer does not need to be present.
+
+    **Request fields**
+
+    <ParamField body="connector_recurring_payment_id" type="string" required>
+      The mandate reference from `SetupRecurring`.
+    </ParamField>
+
+    <ParamField body="amount" type="Money" required>
+      The amount to charge in minor currency units.
+    </ParamField>
+
+    <ParamField body="merchant_transaction_id" type="string" required>
+      Your unique transaction reference for this charge.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_transaction_id" type="string">
+      The processor's ID for this recurring charge.
+    </ResponseField>
+
+    <ResponseField name="status" type="PaymentStatus">
+      `CHARGED` on success, `FAILED` if the mandate is invalid or the card is declined.
+    </ResponseField>
+
+    **Example**
+
+    ```javascript
+    const charge = await client.recurringPayments.charge({
+      connectorRecurringPaymentId: recurring.connectorRecurringPaymentId,
+      amount: { minorAmount: 2900, currency: 'USD' }
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Revoke">
+    Cancels a stored mandate, preventing future charges. Call this when a subscription is cancelled or a customer requests removal of their saved payment method.
+
+    **Request fields**
+
+    <ParamField body="connector_recurring_payment_id" type="string" required>
+      The mandate reference to revoke.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="status" type="string">
+      `REVOKED` on success.
+    </ResponseField>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Refund Service
+
+Provides status lookups for refunds created via `PaymentService.Refund`.
+
+<AccordionGroup>
+  <Accordion title="Get">
+    Retrieves the current status of a refund from the processor.
+
+    **Request fields**
+
+    <ParamField body="connector_refund_id" type="string" required>
+      The processor's refund ID from the `Refund` response.
+    </ParamField>
+
+    <ParamField body="connector_transaction_id" type="string" required>
+      The processor's transaction ID of the original payment.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="status" type="RefundStatus">
+      `PENDING`, `SUCCEEDED`, or `FAILED`.
+    </ResponseField>
+
+    <ResponseField name="refund_amount" type="Money">
+      The amount being refunded.
+    </ResponseField>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Dispute Service
+
+Handles chargebacks and disputes raised by customers with their card issuer. You can accept disputes (issuing a refund) or defend them by submitting evidence.
+
+<AccordionGroup>
+  <Accordion title="Accept">
+    Accepts a dispute, acknowledging the chargeback and initiating a refund to the customer.
+
+    **Request fields**
+
+    <ParamField body="dispute_id" type="string" required>
+      The processor's dispute identifier.
+    </ParamField>
+
+    **Example**
+
+    ```javascript
+    await client.disputes.accept({ disputeId: 'dp_xyz789' });
+    ```
+  </Accordion>
+
+  <Accordion title="Defend">
+    Opens a defense against a dispute. Follow with `SubmitEvidence` to provide supporting documentation.
+
+    **Request fields**
+
+    <ParamField body="dispute_id" type="string" required>
+      The processor's dispute identifier.
+    </ParamField>
+  </Accordion>
+
+  <Accordion title="SubmitEvidence">
+    Submits evidence to support a defended dispute. Evidence types vary by processor but typically include customer communication, shipping receipts, and product descriptions.
+
+    **Request fields**
+
+    <ParamField body="dispute_id" type="string" required>
+      The processor's dispute identifier.
+    </ParamField>
+
+    <ParamField body="evidence" type="DisputeEvidence" required>
+      Supporting documentation for the dispute.
+
+      <Expandable title="Evidence fields">
+        <ParamField body="product_description" type="string">
+          Description of the product or service delivered.
+        </ParamField>
+        <ParamField body="customer_communication" type="string">
+          Communication history with the customer (email threads, chat logs).
+        </ParamField>
+        <ParamField body="shipping_receipt" type="string">
+          Tracking number or shipping confirmation.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    **Example**
+
+    ```javascript
+    await client.disputes.submitEvidence({
+      disputeId: 'dp_xyz789',
+      evidence: {
+        productDescription: 'Premium Widget — digital delivery',
+        customerCommunication: emailThread,
+        shippingReceipt: trackingNumber
+      }
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Event Service
+
+Processes incoming webhooks from payment processors and normalizes them into a unified event format. A single handler works for all connected processors.
+
+<AccordionGroup>
+  <Accordion title="Handle">
+    Parses and validates a raw webhook payload from a processor and returns a normalized event object.
+
+    **Request fields**
+
+    <ParamField body="payload" type="bytes" required>
+      The raw webhook body from the processor.
+    </ParamField>
+
+    <ParamField body="signature" type="string">
+      The webhook signature header from the processor (e.g., `Stripe-Signature`). Used to verify authenticity.
+    </ParamField>
+
+    <ParamField body="connector" type="Connector" required>
+      The connector that sent the webhook (e.g., `STRIPE`, `ADYEN`).
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="type" type="string">
+      Normalized event type: `payment.captured`, `payment.failed`, `refund.completed`, `dispute.opened`, etc.
+    </ResponseField>
+
+    <ResponseField name="payment_id" type="string">
+      The affected payment ID, if applicable.
+    </ResponseField>
+
+    <ResponseField name="refund_id" type="string">
+      The affected refund ID, if applicable.
+    </ResponseField>
+
+    **Example**
+
+    ```javascript
+    app.post('/webhooks', async (req, res) => {
+      const event = await client.events.handle({
+        payload: req.body,
+        signature: req.headers['stripe-signature'],
+        connector: Connector.STRIPE
+      });
+
+      switch (event.type) {
+        case 'payment.captured':
+          await fulfillOrder(event.paymentId);
+          break;
+        case 'payment.failed':
+          await notifyCustomer(event.paymentId);
+          break;
+        case 'refund.completed':
+          await updateInventory(event.refundId);
+          break;
+      }
+
+      res.sendStatus(200);
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Customer Service
+
+Manages customer records at the payment processor level, enabling features like saved payment methods and customer-level fraud controls.
+
+<AccordionGroup>
+  <Accordion title="CreateCustomer">
+    Creates a customer record at the processor. Some processors require a customer record before saving payment methods.
+
+    **Request fields**
+
+    <ParamField body="merchant_customer_id" type="string" required>
+      Your internal customer identifier.
+    </ParamField>
+
+    <ParamField body="email" type="string">
+      Customer email address.
+    </ParamField>
+
+    <ParamField body="name" type="string">
+      Customer full name.
+    </ParamField>
+
+    <ParamField body="phone" type="string">
+      Customer phone number.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="connector_customer_id" type="string">
+      The processor's customer identifier. Store this for future payment method associations.
+    </ResponseField>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Payment Method Service
+
+Tokenizes payment method details at the processor level, enabling reuse without storing raw card data.
+
+<AccordionGroup>
+  <Accordion title="Tokenize">
+    Creates a processor-side token representing a payment method. Use this token in subsequent `Authorize` calls instead of raw card details.
+
+    **Request fields**
+
+    <ParamField body="payment_method" type="PaymentMethod" required>
+      The payment method to tokenize (raw card details or wallet token).
+    </ParamField>
+
+    <ParamField body="connector_customer_id" type="string">
+      Associate the token with an existing customer record.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="payment_method_token" type="string">
+      The processor-side token. Pass this as `payment_method_token` in `Authorize`.
+    </ResponseField>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Merchant Authentication Service
+
+Manages access tokens and session tokens needed for SDK-based checkout flows (Stripe.js, Adyen Drop-in, Apple Pay, Google Pay).
+
+<AccordionGroup>
+  <Accordion title="CreateAccessToken">
+    Creates a short-lived access token for authenticating API calls from client-side SDKs.
+
+    **Request fields**
+
+    <ParamField body="merchant_account_id" type="string" required>
+      Your merchant account identifier.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="access_token" type="string">
+      Short-lived access token for client-side SDK authentication.
+    </ResponseField>
+
+    <ResponseField name="expires_at" type="int64">
+      Unix timestamp when the token expires.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="CreateSessionToken">
+    Creates a session token for checkout page initialization. Required by some processors to associate the frontend session with a server-side order.
+
+    **Request fields**
+
+    <ParamField body="connector_order_id" type="string" required>
+      The order ID from `CreateOrder`.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="session_token" type="string">
+      Session token to pass to the processor's frontend SDK.
+    </ResponseField>
+  </Accordion>
+
+  <Accordion title="CreateSdkSessionToken">
+    Creates a session token formatted for a specific SDK (Apple Pay, Google Pay, etc.).
+
+    **Request fields**
+
+    <ParamField body="payment_method_type" type="PaymentMethodType" required>
+      The SDK type — `apple_pay` or `google_pay`.
+    </ParamField>
+
+    <ParamField body="connector_order_id" type="string" required>
+      The order ID from `CreateOrder`.
+    </ParamField>
+
+    **Response fields**
+
+    <ResponseField name="sdk_session_token" type="string">
+      The session token formatted for the specified SDK.
+    </ResponseField>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Error object
+
+All API errors return a structured `ErrorInfo` object.
+
+```json
+{
+  "error": {
+    "unified_details": {
+      "code": "INSUFFICIENT_FUNDS",
+      "message": "Your card has insufficient funds.",
+      "description": "The payment was declined because the card does not have sufficient available credit.",
+      "user_guidance_message": "Please try a different payment method or contact your bank."
+    },
+    "connector_details": {
+      "code": "card_declined",
+      "message": "Your card was declined.",
+      "reason": "insufficient_funds"
+    },
+    "issuer_details": {
+      "code": "VISA",
+      "message": "Decline",
+      "network_details": {
+        "advice_code": "01",
+        "decline_code": "51",
+        "error_message": "Insufficient funds"
+      }
+    }
+  }
+}
+```
+
+<ResponseField name="unified_details" type="UnifiedErrorDetails">
+  Machine-readable error classification that is identical across all connectors.
+
+  <Expandable title="UnifiedErrorDetails fields">
+    <ResponseField name="code" type="string">
+      Normalized error code (e.g., `INSUFFICIENT_FUNDS`, `PAYMENT_DECLINED`, `EXPIRED_CARD`, `NETWORK_TIMEOUT`).
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable error message.
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Detailed explanation of the error.
+    </ResponseField>
+    <ResponseField name="user_guidance_message" type="string">
+      User-facing message with guidance on next steps.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="connector_details" type="ConnectorErrorDetails">
+  The raw error from the payment processor, preserved for debugging.
+
+  <Expandable title="ConnectorErrorDetails fields">
+    <ResponseField name="code" type="string">
+      Connector-specific error code (e.g., Stripe's `card_declined`).
+    </ResponseField>
+    <ResponseField name="message" type="string">
+      Human-readable message from the connector.
+    </ResponseField>
+    <ResponseField name="reason" type="string">
+      Detailed explanation from the connector.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="issuer_details" type="IssuerErrorDetails">
+  Card issuer and card network error details.
+
+  <Expandable title="IssuerErrorDetails fields">
+    <ResponseField name="code" type="string">
+      Card scheme code (e.g., `VISA`, `MASTERCARD`).
+    </ResponseField>
+    <ResponseField name="network_details" type="NetworkErrorDetails">
+      Network-specific advice and decline codes for retry logic.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+  Use `unified_details.code` to drive application logic. Use `connector_details` and `issuer_details` for debugging and support escalation.
+</Note>
+
+---
+
+## Proto files
+
+The full API is defined in Protocol Buffer files:
+
+- `backend/grpc-api-types/proto/payment.proto` — Core payment types and errors
+- `backend/grpc-api-types/proto/sdk_config.proto` — SDK and network configuration types
+- `backend/grpc-api-types/proto/services.proto` — Service and RPC definitions

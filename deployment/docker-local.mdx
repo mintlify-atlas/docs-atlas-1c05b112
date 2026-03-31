@@ -1,0 +1,148 @@
+---
+title: "Run locally with Docker"
+description: "Spin up the full Hyperswitch stack on your local machine using Docker Compose in a few commands."
+---
+
+The Docker setup starts the App Server, Control Center, and Web SDK together on your machine. It's the fastest way to explore Hyperswitch, test an integration, or contribute to the codebase.
+
+## Prerequisites
+
+You need Docker with Compose support installed before you start.
+
+- **Docker Desktop** (recommended for macOS and Windows) — includes Docker Compose
+- **Docker Engine** (Linux) — install Compose as a plugin separately
+- Alternatively, you can use [Podman](https://podman.io/) or [OrbStack](https://orbstack.dev/) (macOS) as a drop-in replacement for Docker
+
+Verify your installation:
+
+```bash
+docker --version
+docker compose version
+```
+
+<Note>
+  At least 4 GB of free RAM is recommended for the Standard setup. The Full setup (with monitoring and scheduler) requires more.
+</Note>
+
+---
+
+## Start the stack
+
+<Steps>
+  <Step title="Clone the Hyperswitch repository">
+    Clone only the latest tag to keep the download small:
+
+    ```bash
+    git clone --depth 1 --branch latest https://github.com/juspay/hyperswitch
+    cd hyperswitch
+    ```
+  </Step>
+
+  <Step title="Run the setup script">
+    The setup script checks for prerequisites, configures PostgreSQL and Redis, and presents a menu to choose your setup type:
+
+    ```bash
+    scripts/setup.sh
+    ```
+
+    When prompted, select one of the following options:
+
+    | Option | What it starts |
+    |---|---|
+    | **Standard** (recommended) | App Server + Control Center + Web SDK |
+    | **Full** | Standard + Monitoring stack + Scheduler |
+    | **Standalone App Server** | App Server only (no UI components) |
+
+    The script will pull images, configure environment variables, and start the selected services automatically.
+  </Step>
+
+  <Step title="Access the Control Center">
+    Once the services are running, open the Control Center in your browser:
+
+    ```
+    http://localhost:9000
+    ```
+
+    Sign in with your email. A magic link will be sent to the local MailHog inbox at:
+
+    ```
+    http://localhost:8025
+    ```
+
+    Click the link in the email to complete sign-in.
+  </Step>
+
+  <Step title="Verify all components are running">
+    Check that all containers started successfully:
+
+    ```bash
+    docker compose ps
+    ```
+
+    You should see the following services in the `running` state:
+
+    | Service | Default URL |
+    |---|---|
+    | App Server | `http://localhost:8080` |
+    | Control Center | `http://localhost:9000` |
+    | Web SDK (HyperLoader.js) | `http://localhost:9050/HyperLoader.js` |
+    | PostgreSQL | `localhost:5432` |
+    | Redis | `localhost:6379` |
+    | MailHog (email inbox) | `http://localhost:8025` |
+
+    If you selected the **Full** setup, Grafana is also available at `http://localhost:3000` (default credentials: `admin` / `admin`).
+  </Step>
+
+  <Step title="Make a test payment">
+    With the stack running, connect a test connector in the Control Center and make a test transaction using any [test card number](https://docs.hyperswitch.io/hyperswitch-open-source/test-a-payment). You can also use the Hyperswitch [Postman collection](https://www.postman.com/hyperswitch/workspace/hyperswitch/folder/25176183-0103918c-6611-459b-9faf-354dee8e4437) to send API requests directly.
+  </Step>
+</Steps>
+
+---
+
+## Troubleshooting
+
+**Containers exit immediately**
+
+Check the logs for the failing service:
+
+```bash
+docker compose logs hyperswitch-server
+```
+
+**Port already in use**
+
+If port 8080, 9000, or 5432 is already in use, stop the conflicting service or edit the port mappings in the `docker-compose.yml` file before running setup again.
+
+**Slow image pull**
+
+The first run downloads several container images. On a slow connection this can take a few minutes. Subsequent starts use cached images and are much faster.
+
+---
+
+## Stop the stack
+
+To stop all services without removing data:
+
+```bash
+docker compose stop
+```
+
+To stop and remove all containers, networks, and volumes (resets all data):
+
+```bash
+docker compose down -v
+```
+
+---
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Deploy on AWS" icon="aws" href="/deployment/aws">
+    Move beyond local development and deploy the stack into your AWS account.
+  </Card>
+  <Card title="Deploy on Kubernetes" icon="dharmachakra" href="/deployment/kubernetes">
+    Deploy with Helm on GCP, Azure, or any Kubernetes cluster.
+  </Card>
+</CardGroup>

@@ -1,0 +1,177 @@
+---
+title: "3DS Authentication"
+description: "Apply 3D Secure selectively using the Hyperswitch decision manager — including native 3DS, external authentication, SCA exemptions, and importing external 3DS results."
+---
+
+3D Secure (3DS) is an authentication protocol that verifies the cardholder's identity before processing a transaction. When triggered, the issuing bank may prompt the cardholder to authenticate via one-time passcode, biometrics, or a challenge screen. Card networks brand this experience as Visa Secure, Mastercard Identity Check, and Amex SafeKey.
+
+Strong Customer Authentication (SCA), mandated under PSD2 in the EEA and equivalent regulations in the UK, India, Japan, and Australia, requires 3DS for a subset of card payments. In other regions, 3DS is optional but strategically useful for fraud reduction.
+
+## 3DS modes in Hyperswitch
+
+Hyperswitch supports four distinct 3DS approaches so you can match the method to your technical setup:
+
+<CardGroup cols={2}>
+  <Card title="3DS via PSP" icon="plug">
+    The payment processor handles 3DS as part of the transaction flow. The simplest option — no separate 3DS integration required.
+  </Card>
+  <Card title="Standalone 3DS via Hyperswitch" icon="shield">
+    Run 3DS through a dedicated 3DS server (Juspay, Netcetra, 3DSecure.io) while processing the payment on any third-party gateway.
+  </Card>
+  <Card title="Import external 3DS results" icon="file-import">
+    Your application completes 3DS externally, then passes the authentication results to Hyperswitch for payment processing.
+  </Card>
+  <Card title="3DS Intelligence Engine" icon="brain">
+    Use rules and SCA exemptions to decide when to invoke 3DS, reducing unnecessary friction for low-risk transactions.
+  </Card>
+</CardGroup>
+
+## 3DS Decision Manager
+
+The 3DS Decision Manager is a rules engine that evaluates each payment and decides whether to apply 3DS, request an SCA exemption, or pass through without authentication. The goal is to apply 3DS only where it reduces fraud or satisfies regulatory requirements — not universally — which preserves conversion rates on low-risk transactions.
+
+### Configure the Decision Manager via Control Center
+
+<Steps>
+  <Step title="Open the 3DS Decision Manager">
+    In the Control Center, navigate to **Workflow** → **3DS Decision Manager**.
+  </Step>
+  <Step title="Create a rule">
+    Click **Create Rule** and define the conditions for when 3DS should be invoked. Conditions can use: payment amount, currency, country, card network, payment method, customer risk score, and more.
+  </Step>
+  <Step title="Set the 3DS action">
+    For each rule, choose one of:
+
+    - **Force 3DS** — always require 3DS when conditions match
+    - **Skip 3DS** — bypass 3DS for low-risk transactions
+    - **Request SCA exemption** — ask the issuer to exempt the transaction from SCA (e.g. low-value exemption, trusted beneficiary)
+  </Step>
+  <Step title="Activate the rule">
+    Save and activate. Rules are evaluated in priority order; the first matching rule's action applies.
+  </Step>
+</Steps>
+
+### Example rule: skip 3DS for low-value EUR transactions
+
+```json
+{
+  "name": "Low value EUR exemption",
+  "conditions": [
+    { "lhs": "currency", "comparison": "equal", "value": "EUR" },
+    { "lhs": "amount", "comparison": "less_than", "value": 3000 }
+  ],
+  "action": {
+    "type": "three_ds",
+    "three_ds_data": {
+      "type": "no_three_ds"
+    }
+  }
+}
+```
+
+## Standalone 3DS (via Hyperswitch)
+
+Use this when you want to run 3DS independently of the payment processor — for example, when your processor does not support 3DS natively, or you want to use a specific 3DS provider across multiple processors.
+
+<Steps>
+  <Step title="Configure the 3DS provider">
+    In the Control Center, navigate to **Connectors** and add your 3DS server (Juspay, Netcetra, or 3DSecure.io) as an authentication connector.
+  </Step>
+  <Step title="Initiate authentication">
+    Create a payment and set `authentication_type` to `three_ds`. Hyperswitch routes the authentication request to the configured 3DS server.
+
+    ```bash
+    curl --request POST \
+      --url https://sandbox.hyperswitch.io/payments \
+      --header 'Content-Type: application/json' \
+      --header 'api-key: <your-api-key>' \
+      --data '{
+        "amount": 5000,
+        "currency": "EUR",
+        "customer_id": "cus_xyz",
+        "confirm": true,
+        "authentication_type": "three_ds",
+        "payment_method": "card",
+        "payment_method_data": {
+          "card": {
+            "card_number": "4000000000003220",
+            "card_exp_month": "03",
+            "card_exp_year": "27",
+            "card_holder_name": "Alice Martin",
+            "card_cvc": "737"
+          }
+        },
+        "return_url": "https://example.com/return"
+      }'
+    ```
+  </Step>
+  <Step title="Handle the redirect or SDK challenge">
+    The response contains a `next_action` object with the redirect URL or SDK payload for the cardholder challenge. Redirect the customer or invoke the mobile SDK to complete authentication.
+  </Step>
+  <Step title="Confirm the payment after authentication">
+    Once authentication completes, the 3DS server posts the result to Hyperswitch. Hyperswitch then submits the payment to the processor with the authentication data attached.
+  </Step>
+</Steps>
+
+## Importing external 3DS results
+
+If 3DS authentication is handled entirely outside Hyperswitch (e.g. by your own 3DS server or a third-party provider), you can pass the authentication results to Hyperswitch when creating the payment.
+
+```bash
+curl --request POST \
+  --url https://sandbox.hyperswitch.io/payments \
+  --header 'Content-Type: application/json' \
+  --header 'api-key: <your-api-key>' \
+  --data '{
+    "amount": 7500,
+    "currency": "USD",
+    "customer_id": "cus_abc",
+    "confirm": true,
+    "payment_method": "card",
+    "payment_method_data": {
+      "card": {
+        "card_number": "4242424242424242",
+        "card_exp_month": "01",
+        "card_exp_year": "28",
+        "card_holder_name": "Bob Chen",
+        "card_cvc": "456"
+      }
+    },
+    "external_three_ds_authentication_details": {
+      "eci": "05",
+      "cavv": "AAABCSIIAAAAAAACcwgAEMCoNh+=",
+      "three_ds_server_trans_id": "3d-server-tx-id-abc",
+      "message_version": "2.2.0",
+      "ds_trans_id": "ds-trans-id-xyz",
+      "authentication_status": "authenticated"
+    }
+  }'
+```
+
+Hyperswitch attaches the `eci`, `cavv`, and `ds_trans_id` values to the authorization request sent to the processor, satisfying the 3DS data requirements for liability shift.
+
+## Native 3DS for mobile
+
+For iOS and Android applications, Hyperswitch supports native 3DS, which delivers the authentication challenge inside your app rather than redirecting the customer to a browser. This improves the user experience on mobile and typically results in higher challenge completion rates.
+
+Configure native 3DS through the Hyperswitch mobile SDKs (iOS / Android / React Native). The SDK handles the device fingerprinting, challenge presentation, and result submission automatically.
+
+<Tip>
+  Native 3DS eliminates the redirect round-trip on mobile, which is one of the primary causes of cart abandonment in mobile checkout flows.
+</Tip>
+
+## SCA exemptions
+
+The 3DS Intelligence Engine can request SCA exemptions from the issuer for eligible transactions, avoiding the full 3DS flow:
+
+| Exemption type | Eligibility |
+|----------------|-------------|
+| Low-value transaction | Amount below €30 (EUR) / equivalent in other currencies |
+| Trusted beneficiary | Cardholder has whitelisted the merchant with their issuer |
+| Transaction risk analysis (TRA) | Acquirer's fraud rate is below the threshold defined by PSD2 |
+| Recurring transaction | Subsequent payments in a series after the initial SCA-authenticated payment |
+| Corporate card | Card is a B2B corporate/lodge card exempt from SCA |
+
+<Warning>
+  Exemptions are requests to the issuer — not guarantees. The issuer can decline an exemption and issue a soft decline requiring a full 3DS challenge. Configure your retry logic to handle soft declines by upgrading to a 3DS flow. See [Smart Retries](/features/smart-retries) for step-up retry details.
+</Warning>

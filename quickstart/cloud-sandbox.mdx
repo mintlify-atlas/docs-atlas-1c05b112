@@ -1,0 +1,122 @@
+---
+title: "Cloud Sandbox"
+description: "Get a ready-to-use Hyperswitch test environment in minutes. No infrastructure setup required — sign up, configure a test connector, and run your first transaction."
+---
+
+The cloud sandbox at [app.hyperswitch.io](https://app.hyperswitch.io) gives you a fully hosted Hyperswitch environment with pre-configured test infrastructure. You get access to the Control Center, a test merchant account, and the ability to connect sandbox-mode payment processors without any production credentials.
+
+<Note>
+  The cloud sandbox is a shared test environment managed by Juspay. It is not suitable for production traffic. For self-hosted options, see [Run Locally with Docker](/quickstart/local-docker).
+</Note>
+
+## What the sandbox provides
+
+- A live Control Center UI connected to a hosted Hyperswitch backend
+- A test merchant account created automatically on signup
+- Access to sandbox connectors (Stripe test mode, dummy processors, and others)
+- A built-in payment playground to trigger test transactions without writing any code
+- API keys scoped to your merchant account for integration testing
+
+## Set up your sandbox account
+
+<Steps>
+  <Step title="Sign up at app.hyperswitch.io">
+    Navigate to [app.hyperswitch.io](https://app.hyperswitch.io) and click **Sign Up**.
+
+    Enter your email address and choose a strong password, then click **Sign Up** to submit the form.
+
+    The signup process creates a user account and automatically provisions a merchant account linked to your email. You do not need to configure anything manually to get the merchant account.
+
+    Once registered, you are taken directly to the Control Center dashboard.
+  </Step>
+
+  <Step title="Explore the Control Center">
+    The Control Center is the management UI for your Hyperswitch instance. From the left navigation bar you can access:
+
+    - **Home** — overview dashboard with a built-in payment playground
+    - **Connectors → Payment Processors** — connect and manage payment processors
+    - **Workflow → Routing** — configure smart routing rules
+    - **Developers → Keys** — manage API keys and publishable keys
+    - **Analytics** — view payment performance metrics
+    - **Disputes** — manage chargebacks and disputes
+
+    Your email address appears at the bottom of the left nav bar. Click it to access your profile and view your merchant ID.
+  </Step>
+
+  <Step title="Create an API key">
+    From the left navigation bar, go to **Developers → Keys**.
+
+    Click **Create API Key**. In the dialog that appears, enter a description for the key (for example, `sandbox-test-key`) and set an expiration date, then click **Next**.
+
+    Your API key is displayed once. Copy or download it immediately — it cannot be retrieved again from the dashboard for security reasons.
+
+    <Warning>
+      Store your API key securely. If you lose it, you will need to create a new one. Never commit API keys to source control.
+    </Warning>
+
+    You will also see your **Publishable Key** on the Keys page. This key is safe to include in client-side code and is used to initialize the Hyperswitch Web SDK.
+  </Step>
+
+  <Step title="Connect a test payment processor">
+    From the left navigation bar, go to **Connectors → Payment Processors**.
+
+    You will see the full list of payment processors integrated with Hyperswitch. For testing, you have two options:
+
+    **Option A — Connect a dummy processor (no credentials needed):**
+
+    Click on **fauxpay** or another dummy processor in the list. The dummy processors are pre-configured for testing and do not require real API credentials. Click **Connect** and proceed with the default settings.
+
+    **Option B — Connect Stripe in sandbox mode:**
+
+    Click on **Stripe** in the processor list. You will need your Stripe test API key (starts with `sk_test_`). Retrieve it from your [Stripe Dashboard](https://dashboard.stripe.com/test/apikeys) under **Developers → API keys**.
+
+    For either option, follow the connector setup flow:
+
+    1. Enter the required credentials for the processor
+    2. Configure the Hyperswitch webhook endpoint in the processor dashboard if prompted
+    3. Enable the payment methods you want to test (for example, Visa and Mastercard credit cards)
+    4. Click **Connect** to confirm
+
+    Once connected, the processor appears as active in your connector list.
+
+    <Tip>
+      For a quick test with no external accounts required, use the **fauxpay** dummy processor. It accepts any test card number and always returns a successful payment.
+    </Tip>
+  </Step>
+
+  <Step title="Configure routing (optional)">
+    Hyperswitch automatically sets up a default priority-based routing rule using the first connector you connected. You do not need to configure routing manually to run a test payment.
+
+    To view or modify routing rules, go to **Workflow → Routing** in the left navigation bar. You can configure:
+
+    - **Volume-based routing** — split traffic across processors by percentage
+    - **Rule-based routing** — route based on payment parameters like amount, payment method, card type, or geography
+  </Step>
+
+  <Step title="Run a test transaction">
+    From the left navigation bar, go to **Home**. You will see a **Try it out** button on the dashboard.
+
+    Click **Try it out** to open the built-in payment playground. Enter the following test card details:
+
+    | Field | Value |
+    |---|---|
+    | Card number | `4242 4242 4242 4242` |
+    | Expiry date | Any future date |
+    | CVC | Any 3 digits |
+
+    Click **Pay** to submit the payment. You should see a success confirmation screen.
+
+    The transaction also appears in your **Analytics** and payment operations views in the Control Center.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Your First Payment" icon="credit-card" href="/quickstart/first-payment">
+    Learn how to test payments via the Control Center, Postman, and the API directly.
+  </Card>
+  <Card title="Connect a Connector" icon="plug" href="/connectors/activate-connector">
+    Connect a production payment processor and configure payment methods.
+  </Card>
+</CardGroup>

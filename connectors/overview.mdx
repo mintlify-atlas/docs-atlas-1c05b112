@@ -1,0 +1,145 @@
+---
+title: "Connectors overview"
+description: "Connectors are Hyperswitch's integrations with external payment services — PSPs, acquirers, wallets, fraud tools, and more. Add, switch, or remove processors without rewriting your integration."
+---
+
+Connectors are the bridges between your Hyperswitch setup and the third-party services that move or manage money. Every provider has its own APIs, authentication methods, and feature sets. Hyperswitch standardizes these differences through connectors, exposing a single unified Payments API.
+
+This means you can plug in a new processor, route traffic to it, and remove it later — all without touching your application code.
+
+## Why use multiple connectors
+
+As your business grows, a single payment processor rarely covers every need. Common reasons to add connectors:
+
+- **Vendor independence** — reduce dependency on a single provider and eliminate lock-in
+- **Performance optimization** — introduce a challenger processor to improve authorization rates or reduce interchange cost
+- **Global reach** — launch in a new geography with a local payment processor
+- **Localized payment methods** — offer region-specific methods such as iDEAL, SEPA, UPI, or Pix
+- **Reliability** — configure a fallback processor to maintain uptime during outages
+
+Hyperswitch can add a new PSP integration in approximately two weeks, so you can expand your payment stack without diverting engineering resources from your core product.
+
+## Connector categories
+
+<CardGroup cols={2}>
+  <Card title="Payment processors" icon="credit-card">
+    Core integrations for accepting card payments, digital wallets, bank transfers, and alternative payment methods. Includes global processors like Stripe, Adyen, Braintree, Cybersource, and 30+ others.
+  </Card>
+  <Card title="Payout processors" icon="money-bill-transfer">
+    Distribute funds to vendors, contractors, sellers, or partners. Supports Adyen, Stripe, Wise, PayPal, and Cybersource for card, bank rail, and wallet payouts across global and regional markets.
+  </Card>
+  <Card title="3DS authentication providers" icon="shield-check">
+    Offload or augment 3D Secure authentication. Integrate with external authentication providers like Netcetera, or use PSP-native 3DS flows, with full support for decoupled and native mobile authentication.
+  </Card>
+  <Card title="Fraud and risk management" icon="triangle-exclamation">
+    Connect fraud detection and risk scoring tools. Hyperswitch passes transaction data to FRM connectors before or after authorization and can block or review transactions based on their response.
+  </Card>
+  <Card title="Card vaults" icon="vault">
+    Store and retrieve payment credentials independently of any processor. Processor-agnostic tokenization lets you move between PSPs without asking customers to re-enter card details.
+  </Card>
+  <Card title="Subscription providers" icon="rotate">
+    Manage recurring billing and subscription lifecycle events through modular connector integrations, keeping billing logic separate from payment authorization.
+  </Card>
+</CardGroup>
+
+## What connectors abstract
+
+Each connector encapsulates the full complexity of a PSP integration, including:
+
+- **Authentication** — API keys, OAuth tokens, HMAC signatures, client certificates
+- **Request and response mapping** — translating Hyperswitch's unified data model into each PSP's specific schema
+- **Error normalization** — converting PSP-specific error codes into unified codes you can act on consistently
+- **Webhook verification** — validating incoming event payloads with connector-specific HMAC or signature checks
+- **Lifecycle operations** — authorize, capture, void, refund, and dispute handling in each PSP's expected flow
+
+## Supported payment capabilities
+
+The Hyperswitch connector layer supports a broad range of payment configurations through the unified [Payments API](https://api-reference.hyperswitch.io/introduction).
+
+### Card payments
+
+| Capability | Description |
+|---|---|
+| Customer-initiated (CIT) | Raw card or network token, one-time or saved |
+| Merchant-initiated (MIT) | Recurring billing using processor tokens, raw card + NTID, or network token + NTID |
+| Manual capture | Separate authorize and capture calls with support for multiple partial captures |
+| Automatic capture | Combined authorize and capture in a single call |
+| Void | Cancel an authorized payment before capture or settlement |
+| $0 verification | Card verification without charging, including AVS and CVV checks |
+| Incremental authorization | Increase the authorized amount after the initial authorization |
+| L2/L3 data | Line-item order data for corporate card interchange optimization |
+| 3DS authentication | External or PSP-native 3DS, with support for importing authentication results |
+
+### Digital wallets
+
+| Capability | Description |
+|---|---|
+| Apple Pay | Native, redirect, and PSP SDK integration; supports Hyperswitch, PSP, and merchant decryption |
+| Google Pay | Native and redirect flows with decrypted or encrypted payload handling |
+| PayPal | Redirect and native SDK flows |
+| Samsung Pay | Supported on Android |
+
+### Alternative payment methods
+
+- **Buy now, pay later** — Klarna, Afterpay, Affirm via supported connectors
+- **Bank redirects** — iDEAL, Sofort, EPS, Giropay, Bancontact, and others
+- **Bank debits** — ACH, BACS, SEPA direct debit
+- **Bank transfers** — SEPA, ACH, SWIFT
+- **Open banking** — Real-time account-to-account payments via Volt and GoCardless
+- **Crypto** — Bitcoin via Coinbase and OpenNode
+
+### Post-transaction operations
+
+Connectors expose normalized interfaces for:
+
+- **Full and partial refunds** — with unified tracking across all processors
+- **Dispute and chargeback management** — submit evidence and respond to disputes from a single interface
+- **Unified error codes** — standardized error taxonomy including issuer-specific messages, PSP error codes, and MAC-level messages
+
+## Split settlement
+
+Stripe, Adyen, and Xendit connectors support split settlement for marketplaces and platforms. A single transaction can be automatically split across multiple destination accounts using connector-specific split models:
+
+- **Stripe** — application fees and destination account transfers
+- **Adyen** — balance accounts, commissions, and fee splits
+- **Xendit** — flat-amount and percentage-based route distributions
+
+Split settlement is enabled per business profile using the `split_txns_enabled` flag.
+
+## Adding a connector
+
+Most connector integrations follow a click-and-connect flow. The standard steps are:
+
+1. Register with the PSP and obtain API credentials from their dashboard
+2. Sign in to the [Hyperswitch Control Center](https://app.hyperswitch.io)
+3. Navigate to **Connectors** and click **+ Connect** next to the desired processor
+4. Enter the required credentials
+5. Select the payment methods to enable
+6. Configure webhooks if the connector supports them
+
+Authentication credentials vary by provider. Common examples:
+
+| Provider | Required credentials |
+|---|---|
+| Authorize.net | API Login ID and Transaction Key |
+| Adyen | API Key and Account ID |
+| Braintree | Merchant ID, Public Key, and Private Key |
+| Airwallex | API Key and Client ID |
+| Fiserv | API Key, API Secret, Merchant ID, and Terminal ID |
+| PayPal | Client ID and Client Secret |
+
+For a complete step-by-step guide, see [Activate a connector](/connectors/activate-connector).
+
+## Quick links
+
+<CardGroup cols={3}>
+  <Card title="Activate a connector" icon="plug" href="/connectors/activate-connector">
+    Step-by-step guide to configure a connector and payment methods in the Control Center or via API.
+  </Card>
+  <Card title="Available connectors" icon="list" href="/connectors/available-connectors">
+    Full list of supported processors grouped by category, with payment method details for each.
+  </Card>
+  <Card title="Integrations directory" icon="arrow-up-right-from-square" href="https://integrations.hyperswitch.io">
+    Browse all available connectors and payment methods at integrations.hyperswitch.io.
+  </Card>
+</CardGroup>
